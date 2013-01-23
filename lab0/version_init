@@ -1,0 +1,8 @@
+#!/bin/sh
+
+sleep 1s
+echo "[cs194-24] init running"
+uname -a
+
+# Force a power down
+poweroff -f

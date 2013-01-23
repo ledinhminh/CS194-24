@@ -1,0 +1,30 @@
+# Directory structure
+dir /bin 755 1000 1000
+dir /dev 755 0 0
+dir /dev/pts 755 0 0
+dir /mnt 755 0 0
+dir /proc 755 0 0
+dir /sys 755 0 0
+
+# Device nodes
+nod /dev/console 644 0 0 c 5 1
+nod /dev/loop0 644 0 0 b 7 0
+nod /dev/ttyS0 644 0 0 b 4 64
+
+# Binaries provided by busybox -- you probably want to leave all of
+# these in here
+file /bin/busybox busybox/busybox 755 0 0
+slink /bin/ash busybox 777 0 0
+slink /bin/cat busybox 777 0 0
+slink /bin/ls busybox 777 0 0
+slink /bin/mount busybox 777 0 0
+slink /bin/poweroff busybox 777 0 0
+slink /bin/sed busybox 777 0 0
+slink /bin/stat busybox 777 0 0
+slink /bin/sleep busybox 777 0 0
+slink /bin/sh busybox 777 0 0
+slink /bin/uname busybox 777 0 0
+slink /bin/which busybox 777 0 0
+
+# Runs on startup, never exits!
+file /init lab0/version_init 755 0 0

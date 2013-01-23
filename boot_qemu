@@ -1,0 +1,69 @@
+#!/bin/bash
+
+serial=""
+initrd="--initrd .lab0/interactive_initrd.gz"
+append=""
+monitor=""
+debug=""
+kvm=""
+memory="-m 512"
+
+while [[ "$1" != "" ]]
+do
+    if [[ "$1" == "--pipe" ]]
+    then
+	rm -f qemu_serial_pipe.* qemu_monitor_pipe.*
+	mkfifo qemu_serial_pipe.in
+	mkfifo qemu_serial_pipe.out
+	mkfifo qemu_monitor_pipe.in
+	mkfifo qemu_monitor_pipe.out
+	serial="--serial pipe:qemu_serial_pipe"
+	monitor="--monitor pipe:qemu_monitor_pipe"
+	append="--append console=ttyS0"
+    elif [[ "$1" == "--test" ]]
+    then
+	timeout="timeout --foreground 30s"
+    elif [[ "$1" == "--initrd" ]]
+    then
+	initrd="$1 $2"
+	shift
+    elif [[ "$1" == "--stdio" ]]
+    then
+	append="--append console=ttyS0"
+	serial="--serial stdio"
+    elif [[ "$1" == "--cleanup" ]]
+    then
+	rm -f qemu_serial_pipe.in
+	rm -f qemu_serial_pipe.out
+	rm -f qemu_monitor_pipe.in
+	rm -f qemu_monitor_pipe.out
+	exit 0
+    elif [[ "$1" == "--debug" ]]
+    then
+	gdb_port="1234"
+	debug="-gdb tcp::$gdb_port"
+	kvm="--no-kvm"
+
+	# FIXME: gdb doesn't support kernel debugging during early
+	# init (unfortunately it actually breaks that running gdb
+	# instance) so we have to wait for until after Linux makes its
+	# 32->64 bit transition before attaching the GDB instance.
+	# This sleep aims to do that, but if you get errors about "bad
+	# 'g' packet, too long" then you'll have to INCREASE this
+	# sleep time.  Apparently fixing this requires hacking on GDB,
+	# something I'm not prepared to do right now.
+	#   -- palmer, Jan 14 2013
+	(
+	    sleep 5s ; \
+	    terminal -x gdb $(readlink -f linux/vmlinux) \
+	                    -ex "target remote :1234"
+	) &
+    fi
+
+    shift
+done
+
+exec kvm \
+    -m 2048 \
+    --kernel linux/arch/x86/boot/bzImage \
+    $initrd $append $serial $monitor $debug $kvm $mem

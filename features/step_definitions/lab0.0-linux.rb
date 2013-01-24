@@ -164,7 +164,7 @@ Then /^the extra version should be "(.*?)"$/ do |extra_version|
   line = next_line_noprintk()
 
   # We can finally test the actual version here.
-  if !(/Linux \(none\) [0-9]*\.[0-9]*\.[0-9]*cs194/.match(line))
+  if !(/Linux \(none\) [0-9]*\.[0-9]*\.[0-9]*#{extra_version}/.match(line))
     fail
   end
 end

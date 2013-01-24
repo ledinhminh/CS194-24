@@ -55,7 +55,7 @@ do
 	#   -- palmer, Jan 14 2013
 	(
 	    sleep 5s ; \
-	    terminal -x gdb $(readlink -f linux/vmlinux) \
+	    xfce4-terminal -x gdb $(readlink -f linux/vmlinux) \
 	                    -ex "target remote :1234"
 	) &
     fi

@@ -64,6 +64,5 @@ do
 done
 
 exec kvm \
-    -m 2048 \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $mem
+    $initrd $append $serial $monitor $debug $kvm $memory

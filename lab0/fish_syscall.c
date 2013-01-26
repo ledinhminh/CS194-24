@@ -29,18 +29,28 @@ long fish_syscall(int nr, int fn, ...)
 	out = fish_add(va_arg(args, struct fish_blink *));
 	break;
     case FISH_REMOVE:
-	out = fish_remove(va_arg(args, int),
-			  va_arg(args, int));
+    {
+	int iargs[2];
+
+	iargs[0] = va_arg(args, int);
+	iargs[1] = va_arg(args, int);
+	out = fish_remove(iargs[0], iargs[1]);
 	break;
+    }
     case FISH_FIND:
 	out = fish_find(va_arg(args, struct fish_blink *));
 	break;
     case FISH_SYNC:
-	out = fish_sync(va_arg(args, int),
-			va_arg(args, int),
-			va_arg(args, int),
-			va_arg(args, int));
+    {
+	int iargs[4];
+
+	iargs[0] = va_arg(args, int);
+	iargs[1] = va_arg(args, int);
+	iargs[2] = va_arg(args, int);
+	iargs[3] = va_arg(args, int);
+	out = fish_sync(iargs[0], iargs[1], iargs[2], iargs[3]);
 	break;
+    }
     case FISH_START:
 	out = fish_start(va_arg(args, int));
 	break;

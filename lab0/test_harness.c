@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 	    fx = strstr(line+1, " ");
 	    fy = strstr(fx+1, " ");
 	    tx = strstr(fy+1, " ");
-	    ty = strstr(ty+1, " ");
+	    ty = strstr(tx+1, " ");
 
 	    *(fx++) = '\0';
 	    *(fy++) = '\0';

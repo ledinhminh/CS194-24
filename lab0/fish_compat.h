@@ -44,6 +44,7 @@ static inline void copy_to_user(void *to, const void *from, unsigned long n)
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/gfp.h>
+#include <asm/uaccess.h>
 
 #endif
 

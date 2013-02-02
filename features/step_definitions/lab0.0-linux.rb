@@ -103,7 +103,16 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
 
   # Start up QEMU in the background, note the implicit "--pipe"
   # argument that gets added here that causes QEMU to redirect
+  `./boot_qemu --cleanup`
   @qemu_process = IO.popen("./boot_qemu --pipe #{boot_args}", "r")
+
+  # This ensures that QEMU hasn't terminated without us knowing about
+  # it, which would cause the tests to hang on reading.
+  @qemu_watcher = Thread.new{
+    puts @qemu_process.readlines
+    kill_qemu()
+  }
+
   # FIXME: Wait for a second so the FIFO pipes get created, this
   # should probably poll or something, but I'm lazy
   sleep(1)

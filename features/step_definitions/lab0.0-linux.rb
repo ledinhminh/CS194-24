@@ -72,7 +72,12 @@ def kill_qemu()
   # First, go ahead and kill the QEMU process we started earlier.
   # Also clean up the pipes that QEMU made
   Process.kill('INT', @qemu_process.pid)
-  `./boot_qemu --cleanup`
+
+  # NOTE: it's very important we DON'T cleanup the sockets here, as
+  # something else might still need access to them.  I should really
+  # figure out Cucumber's pre and post hooks so we can clean things
+  # up.
+  #`./boot_qemu --cleanup`
   
   # Killing this thread causes any outstanding read request.  This
   # will result in a test failure, but I can't just do it right now
@@ -93,13 +98,17 @@ def kill_qemu()
   # This critical section could probably be shrunk, but we're just
   # killing everything so I've err'd a bit on the safe side here.
   @line_lock.unlock
+
+  # Informs the file waiting code that it should stop trying to wait
+  @qemu_running = false
 end
 
 # This waits for a file before opening it.  I can't figure out why I
 # can't call this "File.wait_open()", which is what I think it should
 # be called...
 def file_wait_open(filename, options)
-  while (!File.exists?(filename))
+  while (!File.exists?(filename) && @qemu_running)
+    STDERR.puts "Waiting on #{filename}"
     sleep(1)
   end
   
@@ -116,6 +125,7 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   # argument that gets added here that causes QEMU to redirect
   `./boot_qemu --cleanup`
   @qemu_process = IO.popen("./boot_qemu --pipe #{boot_args}", "r")
+  @qemu_running = true
 
   # This ensures that QEMU hasn't terminated without us knowing about
   # it, which would cause the tests to hang on reading.

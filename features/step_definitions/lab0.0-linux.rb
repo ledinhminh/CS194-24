@@ -116,10 +116,10 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   # FIXME: Wait for a second so the FIFO pipes get created, this
   # should probably poll or something, but I'm lazy
   sleep(1)
-  @qemu_in_pipe = File.open("qemu_serial_pipe.in", "w+")
-  @qemu_out_pipe = File.open("qemu_serial_pipe.out", "r+")
-  @qemu_min_pipe = File.open("qemu_monitor_pipe.in", "w+")
-  @qemu_mout_pipe = File.open("qemu_monitor_pipe.out", "r+")
+  @qemu_in_pipe = File.wait_open("qemu_serial_pipe.in", "w+")
+  @qemu_out_pipe = File.wait_open("qemu_serial_pipe.out", "r+")
+  @qemu_min_pipe = File.wait_open("qemu_monitor_pipe.in", "w+")
+  @qemu_mout_pipe = File.wait_open("qemu_monitor_pipe.out", "r+")
 
   # Skip QEMU's help message
   @qemu_mout_pipe.gets

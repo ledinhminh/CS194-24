@@ -143,7 +143,11 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   @qemu_mout_pipe = file_wait_open("qemu_monitor_pipe.out", "r+")
 
   # Skip QEMU's help message
-  @qemu_mout_pipe.gets
+  @monitor_thread_read = false
+  @monitor_thread = Thread.new{
+    @qemu_mout_pipe.gets
+    @monitor_thread_read = true
+  }
 
   # Start up a watchdog timer, this ensures that the Linux system
   # doesn't just hang.  This has the side effect of killing the
@@ -186,6 +190,12 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
       running = false
     end
   end
+
+  # Ensure the monitor thread has actually gotten a line from the QEMU
+  # monitor -- otherwise we'll be all out of sync later...
+  if (@monitor_thread_read == false)
+    fail
+  end
 end
 
 Then /^the extra version should be "(.*?)"$/ do |extra_version|
@@ -202,6 +212,7 @@ end
 Then /^Linux should shut down cleanly$/ do
   # Look for Linux's power-off message
   while !(/\[ *[0-9]*\.[0-9]*\] Power down\./.match(next_line()))
+    STDERR.puts(@line)
     # A clean shutdown means that the code can't kernel panic.
     if (/^\[.*\] Kernel panic/.match(@line))
       fail

@@ -95,6 +95,17 @@ def kill_qemu()
   @line_lock.unlock
 end
 
+# This waits for a file before opening it.  I can't figure out why I
+# can't call this "File.wait_open()", which is what I think it should
+# be called...
+def file_wait_open(filename, options)
+  while (!File.exists?(filename))
+    sleep(1)
+  end
+  
+  return File.open(filename, options)
+end
+
 Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   # This lock ensures we aren't brining down the VM while also trying
   # to read a line from stdout -- this will cause the read to block
@@ -116,10 +127,10 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   # FIXME: Wait for a second so the FIFO pipes get created, this
   # should probably poll or something, but I'm lazy
   sleep(1)
-  @qemu_in_pipe = File.wait_open("qemu_serial_pipe.in", "w+")
-  @qemu_out_pipe = File.wait_open("qemu_serial_pipe.out", "r+")
-  @qemu_min_pipe = File.wait_open("qemu_monitor_pipe.in", "w+")
-  @qemu_mout_pipe = File.wait_open("qemu_monitor_pipe.out", "r+")
+  @qemu_in_pipe = file_wait_open("qemu_serial_pipe.in", "w+")
+  @qemu_out_pipe = file_wait_open("qemu_serial_pipe.out", "r+")
+  @qemu_min_pipe = file_wait_open("qemu_monitor_pipe.in", "w+")
+  @qemu_mout_pipe = file_wait_open("qemu_monitor_pipe.out", "r+")
 
   # Skip QEMU's help message
   @qemu_mout_pipe.gets

@@ -1,0 +1,22 @@
+#!/bin/sh
+[ -z "$1" ] && echo "Error: should be run by udhcpc" && exit 1
+
+case "$1" in
+	deconfig)
+		ifconfig $interface 0.0.0.0
+	;;
+	renew|bound)
+		ifconfig $interface $ip \
+		netmask ${subnet:-255.255.255.0} \
+		broadcast ${broadcast:-+}
+
+		[ -n "$router" ] && {
+			for i in $router ; do
+				echo "adding router $i"
+				route add default gw $i dev $interface
+				valid="$valid|$i"
+
+			done
+		}
+	;;
+esac

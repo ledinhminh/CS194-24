@@ -1,0 +1,16 @@
+#!/bin/sh
+
+mount -t proc proc /proc
+mount -t devpts devpts /dev/pts
+
+# Enable networking
+ifconfig eth0 up
+udhcpc eth0 -f -q -r 10.0.2.15 -s /bin/udhcp-script > /dev/null
+
+# Inform the tester that we've booted
+sleep 1s
+echo "[cs194-24] init running"
+ash
+
+# Force a power down
+poweroff -f

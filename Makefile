@@ -15,7 +15,7 @@ CFLAGS=-Wall -Werror
 
 # Source each lab's Makefile seperately -- this way we can provide the
 # labs to the students one at a time
-include lab*/Makefile.mk
+-include */Makefile.mk
 
 # These are recursive builds
 .PHONY: busybox
@@ -35,6 +35,6 @@ linux/usr/gen_init_cpio: linux
 # Adds a trivial clean target -- this gets most things
 .PHONY: clean
 clean::
-	make -C linux clean
-	make -C busybox clean
-	rm -f .lab*/*
+	$(MAKE) -C linux clean
+	$(MAKE) -C busybox clean
+	rm -rf .lab0/* .obj/*

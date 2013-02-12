@@ -35,7 +35,7 @@ slink /bin/which busybox 777 0 0
 file /bin/udhcp-script fs/udhcp-script 755 0 0
 
 # Runs on startup, never exits!
-file /init fs/interactive_init 755 0 0
+file /init fs/init 755 0 0
 
 # The code that's actually written for this class
 file /bin/httpd .obj/httpd 755 0 0

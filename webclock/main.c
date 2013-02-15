@@ -9,18 +9,28 @@
 
 int main(int argc, char **argv)
 {
-    char t[1024], ct[1024];
-    struct timeval tv, ctv;
-    struct tm *tm, *ctm;
+    char t[1024], ct[1024], rt[1024];
+    struct timeval tv, ctv, rtv;
+    struct tm *tm, *ctm, *rtm;
 
     gettimeofday(&tv, NULL);
     memcpy(&ctv, &tv, sizeof(ctv));
+    memcpy(&rtv, &tv, sizeof(rtv));
 
-    ctv.tv_sec = (ctv.tv_sec / 60) * 60 + 60 + 15;
+#if defined(MINUTE_CLOCK)
+    tv.tv_sec = (tv.tv_sec / 60) * 60;
+#elif defined(HOUR_CLOCK)
+    tv.tv_sec = (tv.tv_sec / 3600) * 3600;
+#else
+    #error "Decide on minute or hour resolution"
+#endif
+    ctv.tv_sec = (ctv.tv_sec / 60) * 60 + 60;
     tm = gmtime(&tv.tv_sec);
     strftime(t, 1024, "%a, %d %b %Y %T %z", tm);
     ctm = gmtime(&ctv.tv_sec);
     strftime(ct, 1024, "%a, %d %b %Y %T %z", ctm);
+    rtm = gmtime(&rtv.tv_sec);
+    strftime(rt, 1024, "%a, %d %b %Y %T %z", rtm);
 
     fprintf(stderr,
 	    "HTTP/1.1 200 OK\r\n"
@@ -29,7 +39,7 @@ int main(int argc, char **argv)
 	    "Expires: %s\r\n"
 	    "ETag: \"%lx\"\r\n"
 	    "\r\n",
-	    t,
+	    rt,
 	    ct,
 	    tv.tv_sec
 	);

@@ -80,6 +80,12 @@ int main(int argc, char **argv)
 	    goto cleanup;
 	}
 
+	if (mterr != 0)
+	{
+	    perror("unrecoverable error while processing a client");
+	    abort();
+	}
+
     cleanup:
 	pfree(session);
     }

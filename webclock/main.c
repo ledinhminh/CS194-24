@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     rtm = gmtime(&rtv.tv_sec);
     strftime(rt, 1024, "%a, %d %b %Y %T %z", rtm);
 
-    fprintf(stderr,
+    fprintf(stdout,
 	    "HTTP/1.1 200 OK\r\n"
 	    "Content-Type: text/html\r\n"
 	    "Date: %s\r\n"
@@ -46,7 +46,7 @@ int main(int argc, char **argv)
 
     do_work();
 
-    fprintf(stderr,
+    fprintf(stdout,
 	    "<HTML>\r\n"
 	    "<HEAD>\r\n"
 	    "  <TITLE>A Simple CGI Test</TITLE>\r\n"

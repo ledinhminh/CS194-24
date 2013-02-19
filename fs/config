@@ -15,7 +15,7 @@ nod /dev/ttyS0 644 0 0 b 4 64
 
 # Binaries provided by busybox -- you probably want to leave all of
 # these in here
-file /bin/busybox busybox/busybox 755 0 0
+file /bin/busybox busybox/busybox 555 0 0
 slink /bin/ash busybox 777 0 0
 slink /bin/cat busybox 777 0 0
 slink /bin/ifconfig busybox 777 0 0
@@ -38,7 +38,7 @@ file /bin/udhcp-script fs/udhcp-script 755 0 0
 file /init fs/init 755 0 0
 
 # The code that's actually written for this class
-file /bin/httpd .obj/httpd 755 0 0
-file /var/www/webclock .obj/webclock 755 0 0
-file /var/www/hourclock .obj/hourclock 755 0 0
-file /var/www/test.html www/test.html 555 0 0
+file /bin/httpd .obj/httpd 555 0 0
+file /var/www/webclock .obj/webclock 555 0 0
+file /var/www/hourclock .obj/hourclock 555 0 0
+file /var/www/test.html www/test.html 666 0 0

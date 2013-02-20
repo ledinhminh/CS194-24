@@ -159,8 +159,8 @@ const char *http_gets(struct http_session *s)
 	    strcpy(new, s->buf);
 
 	    memmove(s->buf, s->buf + strlen(new) + 2,
-		    s->buf_size - strlen(new));
-	    s->buf_used -= strlen(new);
+		    s->buf_size - strlen(new) - 2);
+	    s->buf_used -= strlen(new) + 2;
 	    s->buf[s->buf_used] = '\0';
 
 	    return new;

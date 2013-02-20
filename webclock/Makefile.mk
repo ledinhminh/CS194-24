@@ -10,7 +10,7 @@ WEBCLOCK_FLAGS := -pthread -DMINUTE_CLOCK
 
 all: .obj/webclock
 .obj/webclock: $(WEBCLOCK_OBJ)
-	gcc -g $(WEBCLOCK_FLAGS) $(CFLAGS) -o "$@" $^
+	gcc -static -g $(WEBCLOCK_FLAGS) $(CFLAGS) -o "$@" $^
 
 .obj/webclock.d/%.o : webclock/%.c $(WEBCLOCK_HDR)
 	mkdir -p `dirname $@`
@@ -29,7 +29,7 @@ HOURCLOCK_FLAGS := -pthread -DHOUR_CLOCK
 
 all: .obj/hourclock
 .obj/hourclock: $(HOURCLOCK_OBJ)
-	gcc -g $(HOURCLOCK_FLAGS) $(CFLAGS) -o "$@" $^
+	gcc -static -g $(HOURCLOCK_FLAGS) $(CFLAGS) -o "$@" $^
 
 .obj/hourclock.d/%.o : webclock/%.c $(HOURCLOCK_HDR)
 	mkdir -p `dirname $@`

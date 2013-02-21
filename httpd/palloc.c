@@ -211,7 +211,10 @@ int _pfree(const void *ptr, bool external)
 	prev = NULL;
 	cur = blk->parent->children;
 	while (cur != NULL && cur->blk != blk)
+	{
+	    prev = cur;
 	    cur = cur->next;
+	}
 
 	if (cur == NULL)
 	{

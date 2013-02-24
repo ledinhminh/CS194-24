@@ -31,19 +31,23 @@ struct mimetype *mimetype_new(palloc_env env, const char *path)
     
     int is_executable;
 
-    fullpath_len = snprintf(NULL, 0, "%s/%s", HTTPD_ROOT, path) + 1;
+    // I really don't know why the format string is %s/%s, we know we're getting a / in the request URL anyway...
+    // It just works because the filesystem is kind to us.
+    fullpath_len = snprintf(NULL, 0, "%s%s", HTTPD_ROOT, path) + 1;
     fullpath = palloc_array(env, char, fullpath_len);
-    snprintf(fullpath, fullpath_len, "%s/%s", HTTPD_ROOT, path);
+    snprintf(fullpath, fullpath_len, "%s%s", HTTPD_ROOT, path);
     
     // Now is the time.
     
     is_executable = access(fullpath, X_OK);
     INFO; printf("is_executable=%d\n", is_executable);
     
-    if (0 == is_executable)
+    if (0 == is_executable) {
+        INFO; printf("calling mimetype_cgi_new\n");
         mt = mimetype_cgi_new(env, fullpath);
-    else
+    } else {
         mt = mimetype_file_new(env, fullpath);
+    }
     
     pfree(fullpath);
 

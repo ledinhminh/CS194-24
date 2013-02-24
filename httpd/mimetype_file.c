@@ -1,6 +1,8 @@
 /* cs194-24 Lab 1 */
 
+#include "palloc.h"
 #include "mimetype_file.h"
+#include "debug.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -35,16 +37,32 @@ int http_get(struct mimetype *mt, struct http_session *s)
     int fd;
     char buf[BUF_COUNT];
     ssize_t readed;
+    char* query_string;
+    char* real_path;
+    int real_path_len; 
 
     mtf = palloc_cast(mt, struct mimetype_file);
     if (mtf == NULL)
 	return -1;
+    
+    // Attempt to deal with query strings.
+    // We can improve this later...
+    query_string = strstr(mtf->fullpath, "?");
+    real_path_len = NULL != query_string ? query_string - mtf->fullpath : strlen(mtf->fullpath);
+    real_path = palloc_array(s, char, real_path_len + 1);
+    strncpy(real_path, mtf->fullpath, real_path_len);
+    *(real_path + real_path_len) = '\0';
+    INFO; printf("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);
+    
+    if (NULL != query_string) {
+        INFO; printf("Have query string: %s\n", query_string);
+    }
 
     s->puts(s, "HTTP/1.1 200 OK\r\n");
     s->puts(s, "Content-Type: text/html\r\n");
     s->puts(s, "\r\n");
 
-    fd = open(mtf->fullpath, O_RDONLY);
+    fd = open(real_path, O_RDONLY);
 
     while ((readed = read(fd, buf, BUF_COUNT)) > 0)
     {

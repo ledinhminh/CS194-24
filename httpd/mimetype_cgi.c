@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define BUF_COUNT 4096
 
@@ -34,19 +35,39 @@ struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath)
 int http_get(struct mimetype *mt, struct http_session *s)
 {
     struct mimetype_cgi *mtc;
+    FILE* fp;
     int fd;
     char buf[BUF_COUNT];
     ssize_t readed;
+    char* query_string;
+    char* real_path;
+    int real_path_len; 
 
     mtc = palloc_cast(mt, struct mimetype_cgi);
     if (mtc == NULL)
 	return -1;
+    
+    // I guess this ought to be a function of sorts. Well, screw that!
+    // Attempt to deal with query strings.
+    // We can improve this later...
+    query_string = strstr(mtc->fullpath, "?");
+    real_path_len = NULL != query_string ? query_string - mtc->fullpath : strlen(mtc->fullpath);
+    real_path = palloc_array(s, char, real_path_len + 1);
+    strncpy(real_path, mtc->fullpath, real_path_len);
+    *(real_path + real_path_len) = '\0';
+    INFO; printf("fullpath=%s, real_path_len=%d, real_path=%s\n", mtc->fullpath, real_path_len, real_path);
+    
+    if (NULL != query_string)
+        INFO; printf("query string: %s\n", query_string);
 
-    s->puts(s, "HTTP/1.1 200 OK\r\n");
-    s->puts(s, "Content-Type: text/html\r\n");
-    s->puts(s, "\r\n");
-
-    fd = open(mtc->fullpath, O_RDONLY);
+    // No, it cannot be O_RDONLY.
+    fp = popen(real_path, "r"); 
+    if (NULL == fp) {
+        INFO; printf("popen returned NULL; strerror: %s\n", strerror(errno));
+        return -1;
+    }
+    fd = fileno(fp);
+    INFO; printf("fp=%p, fd=%d\n", fp, fd);
 
     while ((readed = read(fd, buf, BUF_COUNT)) > 0)
     {
@@ -62,8 +83,7 @@ int http_get(struct mimetype *mt, struct http_session *s)
 		written += w;
 	}
     }
-
-    close(fd);
+    pclose(fp);
 
     return 0;
 }

@@ -8,6 +8,7 @@ debug=""
 kvm=""
 memory="-m 512"
 net="-net nic,model=ne2k_pci -net user -redir tcp:8088::8088"
+smp="-smp 4"
 
 while [[ "$1" != "" ]]
 do
@@ -66,4 +67,4 @@ done
 
 exec kvm \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $memory $net
+    $initrd $append $serial $monitor $debug $kvm $memory $net $smp

@@ -1060,7 +1060,7 @@ struct sched_class {
 	void (*put_prev_task) (struct rq *rq, struct task_struct *p);
 
 #ifdef CONFIG_SMP
-	int  (*select_task_rq)(struct task_struct *p, int sd_flag, int flags);
+  int  (*select_task_rq)(struct task_struct *p, int sd_flag, int flags);
 
 	void (*pre_schedule) (struct rq *this_rq, struct task_struct *task);
 	void (*post_schedule) (struct rq *this_rq);
@@ -1186,6 +1186,18 @@ enum perf_event_task_context {
 	perf_sw_context,
 	perf_nr_task_contexts,
 };
+
+typedef struct thread_limiter {
+  /* Maximum number of threads this process may create,
+   * If value is 0 then process is not limited
+   */
+  unsigned long max_threads;
+  /* Current number of threads in process tree
+     We should only use atomic_add and atomic_dec to update.
+  */
+  unsigned long num_threads;
+} thread_limiter;
+
 
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
@@ -1548,6 +1560,8 @@ struct task_struct {
 #ifdef CONFIG_UPROBES
 	struct uprobe_task *utask;
 #endif
+  /* Values for limiting the number of scheduler entities */
+  struct thread_limiter *tlimiter;
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

@@ -40,5 +40,6 @@ file /init fs/init 755 0 0
 # The code that's actually written for this class
 file /bin/httpd .obj/httpd 555 0 0
 file /var/www/webclock .obj/webclock 555 0 0
+file /var/www/webclock.dl .obj/webclock 444 0 0
 file /var/www/hourclock .obj/hourclock 555 0 0
 file /var/www/test.html www/test.html 666 0 0

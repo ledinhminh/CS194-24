@@ -149,4 +149,10 @@
 
 #define PR_GET_TID_ADDRESS	40
 
+/*
+ * Set a limit on the maximum number of scheduable entities a given process tree
+ * Can contain.
+ */
+#define PR_SET_THREAD_LIMIT 41
+
 #endif /* _LINUX_PRCTL_H */

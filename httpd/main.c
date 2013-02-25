@@ -6,6 +6,7 @@
 #include "http.h"
 #include "mimetype.h"
 #include "palloc.h"
+#include "debug.h"
 
 #define PORT 8088
 #define LINE_MAX 1024
@@ -30,6 +31,8 @@ int main(int argc, char **argv)
 	char *method, *file, *version;
 	struct mimetype *mt;
 	int mterr;
+    struct http_header* headers;
+    struct http_header* next_header;
 
 	session = server->wait_for_client(server);
 	if (session == NULL)
@@ -58,14 +61,22 @@ int main(int argc, char **argv)
 	fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
 		method, file, version);
 
+    headers = palloc(env, struct http_header);
+    INFO; printf("new http_headers at %p\n", headers);
+    session->headers = headers;
 	/* Skip the remainder of the lines */
+    // We can't do this now -- must examine them for If-None-Match
 	while ((line = session->gets(session)) != NULL)
 	{
 	    size_t len;
 
 	    len = strlen(line);
 	    fprintf(stderr, "[%04lu] < %s\n", len, line);
-	    pfree(line);
+	    // pfree(line);
+        headers->header = line;
+        next_header = palloc(env, struct http_header);
+        headers->next = next_header;
+        headers = next_header;
 
 	    if (len == 0)
 		break;
@@ -88,6 +99,18 @@ int main(int argc, char **argv)
 
     cleanup:
 	pfree(session);
+    
+    // Now we also have to clean up the header list. What a pain
+    do  {
+        // If we overshot, go home
+        if (NULL == next_header->header)
+            continue;
+        // Free the string.
+        pfree(headers->header);
+        // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
+        pfree(headers);
+    } while (NULL != (headers = headers->next));
+    
     }
 
     return 0;

@@ -5,6 +5,13 @@
 
 #include "palloc.h"
 
+/* Linked list of headers */
+struct http_header
+{
+    const char* header;
+    struct http_header* next;
+};
+
 /* Allows HTTP sessions to be transported over the HTTP protocol */
 struct http_session
 {
@@ -19,6 +26,8 @@ struct http_session
     size_t buf_size, buf_used;
 
     int fd;
+    
+    struct http_header* headers;
 };
 
 /* A server that listens for HTTP connections on a given port. */

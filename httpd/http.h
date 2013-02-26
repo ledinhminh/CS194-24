@@ -40,5 +40,6 @@ struct http_server
 
 /* Creates a new HTTP server listening on the given port. */
 struct http_server *http_server_new(palloc_env env, short port);
+int listen_on_port(short port);
 
 #endif

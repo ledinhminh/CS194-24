@@ -31,7 +31,7 @@ struct string
     char *data;
 };
 
-static int listen_on_port(short port);
+int listen_on_port(short port);
 static struct http_session *wait_for_client(struct http_server *serv);
 
 static int close_session(struct http_session *s);
@@ -50,7 +50,8 @@ struct http_server *http_server_new(palloc_env env, short port)
 
     hs->wait_for_client = &wait_for_client;
 
-    hs->fd = listen_on_port(port);
+    if(0)
+        hs->fd = listen_on_port(port);
 
     return hs;
 }

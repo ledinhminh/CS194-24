@@ -136,7 +136,7 @@ void * _palloc_cast(const void *ptr, const char *type)
 
     blk = PTR_BLK(ptr);
 
-    if (blk->type != type)
+    if (blk->type != type && (strcmp(blk->type, type) != 0))
 	return NULL;
 
     return (void *)ptr;

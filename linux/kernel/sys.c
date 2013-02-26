@@ -2165,13 +2165,12 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 				return -EINVAL;
 			return current->no_new_privs ? 1 : 0;
     case PR_SET_THREAD_LIMIT:
-      if (!arg2 || arg3 || arg4 || arg5) {
+      if (!arg2) {
         // arg2 should be set and should not be 0, it is unsigned so we are
         // unconcerned for negative values.
-        // We are also enforcing that arg[3-5] not be set as if the user were to
-        // set them then they probably intended for some other behavior.
         error = -EINVAL;
       } else {
+        me->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
         atomic_set(&me->tl_max, arg2);
         sema_init(me->tl_lock, arg2);
       }

@@ -70,6 +70,7 @@
 #include <linux/khugepaged.h>
 #include <linux/signalfd.h>
 #include <linux/uprobes.h>
+#include <linux/semaphore.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1604,6 +1605,13 @@ long do_fork(unsigned long clone_flags,
 	 */
 	if (!IS_ERR(p)) {
 		struct completion vfork;
+
+    /*
+     * If tl_max > 0 then we limit the number of concurrent threads
+     */
+    if(atomic_read(&p->tl_max)){
+      down(p->tl_lock);
+    }
 
 		trace_sched_process_fork(current, p);
 

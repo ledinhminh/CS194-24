@@ -979,6 +979,14 @@ void do_exit(long code)
 	/* causes final put_task_struct in finish_task_switch(). */
 	tsk->state = TASK_DEAD;
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
+
+  if(atomic_read(&tsk->tl_max)){
+    /*
+     * TODO: If tl_lock == tl_max should free semaphores?
+     */
+    up(tsk->tl_lock); /* allow more threads to start */
+  }
+
 	schedule();
 	BUG();
 	/* Avoid "noreturn function does return".  */

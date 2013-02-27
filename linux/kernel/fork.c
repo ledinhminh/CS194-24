@@ -1597,6 +1597,21 @@ long do_fork(unsigned long clone_flags,
 			trace = 0;
 	}
 
+  if(current->tl_lock != NULL){
+    /*
+     * If tl_lock isn't null then we are restricting the number of threads this
+     * process can start.
+     */
+
+    if(down_trylock(current->tl_lock)){
+      return -EAGAIN;
+    }
+    /*
+     * Increase the running sem.
+     */
+    up(current->tl_running);
+  }
+
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
 			 child_tidptr, NULL, trace);
 	/*
@@ -1634,15 +1649,7 @@ long do_fork(unsigned long clone_flags,
         p->tl_running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
         sema_init(p->tl_lock, atomic_read(&p->tl_max));
         sema_init(p->tl_running, 0);
-      } else {
-        /*
-         * We only up tl_running on threads after the thread that created it
-         * this ensures the cout is num running -1. So when the count is 0
-         * down_trylock will return 1.
-         */
-        up(p->tl_running);
       }
-      down(p->tl_lock);
     }
 
 		wake_up_new_task(p);

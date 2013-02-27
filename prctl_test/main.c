@@ -26,7 +26,7 @@ int main(int argc, char **argv)
   int j = 0;
   int pid = 0;
   int s = 0;
-  for(i = 0; i < 4; ++i){
+  for(i = 0; i < 1; ++i){
     pid = fork();
     s = 2; //(rand() % 2) + 1;
     if(pid == 0){

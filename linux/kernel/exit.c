@@ -980,7 +980,7 @@ void do_exit(long code)
 	tsk->state = TASK_DEAD;
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
 
-  if(atomic_read(&tsk->tl_max) && tsk->tl_root_pid != tsk->pid){
+  if(tsk->tl_lock != NULL){
     up(tsk->tl_lock); /* allow more threads to start */
     if(down_trylock(tsk->tl_running)){
       /* Free memory associated with tl_lock and tl_running */

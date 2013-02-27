@@ -2,17 +2,18 @@
 
 #include <stdbool.h>
 #include <string.h>
-
-#include "http.h"
-#include "mimetype.h"
-#include "palloc.h"
-#include "debug.h"
-
 #include <stdlib.h>
 #include <pthread.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
+
+#include "http.h"
+#include "mimetype.h"
+#include "palloc.h"
+#include "debug.h"
+#include "fd_list.h"
 
 #define PORT 8088
 #define LINE_MAX 1024
@@ -21,7 +22,7 @@
 #define FD_READ 1
 #define FD_WRITE 2
 
-pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT
 
 struct server_thread_args
 {
@@ -31,111 +32,6 @@ struct server_thread_args
 	struct fd_list* fd_list_head;
 };
 
-struct fd_list
-{
-	int fd;
-	struct http_session *session;
-	struct fd_list* next;
-};
-
-//FD LIST HELPERS
-struct fd_list* fd_list_head;
-void fd_list_add(palloc_env* env, int fd, struct http_session* session)
-{
-	struct fd_list* to_add;
-	struct fd_list* current;
-
-	to_add = palloc(env, struct fd_list);
-	to_add->fd = fd;
-	to_add->session = session;
-	to_add->next = NULL;
-
-	pthread_mutex_lock( &mutex1 );
-	if (fd_list_head == NULL)
-	{
-		fd_list_head = to_add;
-	}
-	else
-	{
-		current = fd_list_head;
-		while (current->next != NULL)
-		{
-			current = current->next;
-		}
-		current->next = to_add;
-	}
-	pthread_mutex_unlock( &mutex1 );
-}
-
-struct http_session* fd_list_find(int fd)
-{
-	struct fd_list* current;
-	current = fd_list_head;
-	while(current != NULL){
-		if (current->fd == fd)
-		{
-			return current->session;
-		}
-		else
-		{
-			current = current->next;
-		}
-	}
-	return NULL;
-}
-
-void fd_list_del(int fd)
-{
-	struct fd_list* current;
-	struct fd_list* prev;
-	struct fd_list* next;
-
-	current = fd_list_head;
-	prev = NULL;
-	next = NULL;
-
-	pthread_mutex_lock( &mutex1 );
-	while(current != NULL){
-		next = current->next;
-		if(current->fd == fd)
-		{
-			if(prev == NULL)
-			{
-				//current is head
-				if(next == NULL)
-				{
-					//current is the only one
-					fd_list_head = NULL;
-				}
-				else
-				{
-					//next should be head
-					fd_list_head = next;
-				}
-			}
-			else
-			{
-				if(next == NULL)
-				{
-					prev->next = NULL;
-				}
-				else
-				{
-					prev->next = next;
-				}
-			}
-			pfree(current);
-		}
-		else
-		{
-			prev = current;
-			current = current->next;
-		}
-	}
-	pthread_mutex_unlock( &mutex1 );
-
-}
-//END of FD LIST HELPERS
 static int make_socket_non_blocking (int sfd)
 {
   int flags;
@@ -184,16 +80,13 @@ void* start_thread(void *args)
 	server = http_server_new((palloc_env*) targ->thread_env, PORT);
 	server->fd = socket_fd;
 
-	fprintf(stderr, "Started the Thread with fd %i\n", socket_fd);
+    DEBUG("socket_fd=%d\n", socket_fd);
 
 	if (server == NULL)
-	{
-		perror("Unable to open HTTP server");
-	}
+        DEBUG("cannot allocate server: %s\n", strerror(errno));
 
 	while (true)
 	{
-		//absolute need
 		struct http_session *session;
 		struct epoll_event event;
 
@@ -207,26 +100,24 @@ void* start_thread(void *args)
 		int num_active_epoll, index;
 
 		num_active_epoll = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-		if (num_active_epoll < 0){
-			perror("EPOLL SADNESS\n");
+		if (num_active_epoll < 0) {
+            DEBUG("epoll_wait failure: %s\n", strerror(errno));
 			exit(1);
 		}
 		for (index = 0; index < num_active_epoll; index++)
 		{
-			if ((events[index].events & EPOLLERR) ||
-				(events[index].events & EPOLLHUP))
+			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLHUP))
 			{
-				//something happened, the socket closed so we should close
-				//it on our side
-				INFO;fprintf(stderr, "epoll error\n");
-				//TODO: remove fd from structure
+				// Something happened, the socket closed so we should close
+				// it on our side
+                DEBUG("epoll error\n");
+				// TODO: remove fd from structure
 				close(events[index].data.fd);
 				continue;
 			}
 			else if (events[index].data.fd == socket_fd)
 			{
-				//accept the socket and create a session from it
-				INFO;printf("\n\n\nTHREAD %lu LISTENED\n", (unsigned long)pthread_self() );
+                DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
 
 				//check if session is NULL
@@ -236,43 +127,42 @@ void* start_thread(void *args)
 					goto rearm;
 				}
 
-				//try to make accepting socket non-blocking
-				if(make_socket_non_blocking(session->fd) < 0)
+				// Try to make accepting socket non-blocking
+				if (make_socket_non_blocking(session->fd) < 0)
 				{
-					perror("Couldn't make accepted non-blocking");
+                    DEBUG("failed to set non-blocking\n");
 					goto rearm;
 				}
 
-				//add session to a fd_container and add it to someplace
+				// Add session to fd_list
 				fd_list_add(env, session->fd, session);
 
-				//Add the accepted socket into epoll
+				// Add the accepted socket into epoll
 				struct epoll_event sess_event;
 				sess_event.data.fd = session->fd;
-				sess_event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &sess_event) < 0)
-				{
-					perror("Couldn't add socket to epoll");
+				sess_event.events = EPOLL_FLAGS;
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &sess_event) < 0) {
+                    DEBUG("couldn't add socket to epoll: %s\n", strerror(errno));
 					goto rearm;
 				}
 
 				rearm:
-				//rearm the socket
-				//not sure why, but we have to rearm the socket with the listening socket descriptor
-				//with another instance with the correct event flags...
-				//I guess that the event flags are cleared.
+				// Rearm the socket
+				// Not sure why, but we have to rearm the socket with the listening socket descriptor
+				// with another instance with the correct event flags...
+				// I guess that the event flags are cleared.
 				event.data.fd = socket_fd;
-				event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-				INFO;printf("THREAD %lu REARM\n", (unsigned long)pthread_self() );
-				if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event))
-				{
-					perror("EPOLL MOD FAIL\n\n");
+				event.events = EPOLL_FLAGS;
+                DEBUG("rearming\n");
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event)) {
+                    DEBUG("epoll_ctl failed: %s\n", strerror(errno));
 				}
 			}
 			else
 			{
-				INFO;printf("\n\n\nTHREAD %lu MANAGE ACCEPTED\n", (unsigned long)pthread_self() );
-				//an accepted socket fd
+                DEBUG("processing request\n");
+
+				// An accepted socket fd
 				session = fd_list_find(events[index].data.fd);
 
 				//the session at this point can be either a socket_fd or a disk_fd, we should check
@@ -317,14 +207,12 @@ void* start_thread(void *args)
 
 
 				line = session->gets(session);
-
 				if (line == NULL)
 				{
 					fprintf(stderr, "Client connected, but no lines could be read\n");
 					goto cleanup;
 				}
 
-				//WTF IS THIS????
 				method = palloc_array(session, char, strlen(line));
 				file = palloc_array(session, char, strlen(line));
 				version = palloc_array(session, char, strlen(line));
@@ -337,20 +225,18 @@ void* start_thread(void *args)
 				fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
                 method, file, version);
 
-				headers = palloc(env, struct http_header);
-				INFO; printf("new http_headers at %p\n", headers);
+				headers = palloc(session, struct http_header);
+				DEBUG("new http_headers at %p\n", headers);
 				session->headers = headers;
-				/* Skip the remainder of the lines */
-        // We can't do this now -- must examine them for If-None-Match
+
 				while ((line = session->gets(session)) != NULL)
 				{
 					size_t len;
 
 					len = strlen(line);
 					fprintf(stderr, "[%04lu] < %s\n", len, line);
-          // pfree(line);
 					headers->header = line;
-					next_header = palloc(env, struct http_header);
+					next_header = palloc(session, struct http_header);
 					headers->next = next_header;
 					headers = next_header;
 
@@ -374,22 +260,11 @@ void* start_thread(void *args)
 				}
 
 				cleanup:
-				// fd_list_del(session->fd);
 				close(session->fd);
 				pfree(session);
-
-        // Now we also have to clean up the header list. What a pain
-				do  {
-          // If we overshot, go home
-					if (NULL == next_header->header)
-						continue;
-          // Free the string.
-					pfree(headers->header);
-          // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
-					pfree(headers);
-				} while (NULL != (headers = headers->next));
+                
+                DEBUG("finished processing request\n");
 				
-				INFO;printf("\n\n\nTHREAD %lu FINISHED MANAGE\n", (unsigned long)pthread_self() );
 			} //end of else if
 		} //end of epoll event for
 	} //end of while loop
@@ -399,33 +274,24 @@ int main(int argc, char **argv)
 {
 	palloc_env env;
 
-  // MULTI ------
-  //server stuff
-  struct server_thread_args thread_args;
+    struct server_thread_args thread_args;
 	int debug_threaded;
-  //network stuff
 	int socket_fd;
-  //epoll stuff
 	int epoll_fd;
 	struct epoll_event event;
-  //threading stuff
+
 	pthread_t thread1;
 	pthread_t thread2;
-  // MULTI ------
 
-	//Create server environment
-	INFO;fprintf(stderr, "initializing env\n");
 	env = palloc_init("httpd root context");
 
 	//Create a listening sockent and listen on it
-	INFO;fprintf(stderr, "listening on port\n");
 	socket_fd = listen_on_port(PORT);
 	if(socket_fd < 0)
 	{
 		perror("Couldn't open/listen on PORT");
 		return -1;
 	}
-	INFO;fprintf(stderr, "Listen FD %i\n", socket_fd);
 
 	if(make_socket_non_blocking(socket_fd) < 0)
 	{
@@ -434,7 +300,7 @@ int main(int argc, char **argv)
 	}
 
 	//Create a new epoll structure
-	INFO;fprintf(stderr, "Creating new EPOLL\n");
+	DEBUG(stderr, "Creating new EPOLL\n");
 	epoll_fd = epoll_create1(0);
 	if(epoll_fd < 0)
 	{

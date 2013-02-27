@@ -1551,6 +1551,16 @@ struct task_struct {
 #endif
   /* Values for limiting the number of scheduler entities */
 
+  /* We do not want to limit the number of threads the thread that makes
+   * the call to prctl, we only want to limit the number of threads of each
+   * of its children. To do this we keep track of the root pid as tl_root_pid
+   * and if the current thread is not the root then we start a tl_lock on it.
+   * Also if a given thread has a tl_root_pid set and that thread is not the
+   * root, any call to change the thread limit through prctl will return
+   * -EINVAL.
+   */
+  pid_t tl_root_pid;
+
   /* If tl_max == 0 then then threads aren't limited else they are
    * Be sure to use atomic_set(&tl_max,0) or atomic_set(&tl_max,1)
    * for enable/disable.

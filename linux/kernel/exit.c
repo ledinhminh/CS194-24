@@ -980,7 +980,7 @@ void do_exit(long code)
 	tsk->state = TASK_DEAD;
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
 
-  if(atomic_read(&tsk->tl_max)){
+  if(atomic_read(&tsk->tl_max) && tsk->tl_root_pid != tsk->pid){
     /*
      * TODO: If tl_lock == tl_max should free semaphores?
      */

@@ -1606,13 +1606,6 @@ long do_fork(unsigned long clone_flags,
 	if (!IS_ERR(p)) {
 		struct completion vfork;
 
-    /*
-     * If tl_max > 0 then we limit the number of concurrent threads
-     */
-    if(atomic_read(&p->tl_max)){
-      down(p->tl_lock);
-    }
-
 		trace_sched_process_fork(current, p);
 
 		nr = task_pid_vnr(p);
@@ -1625,6 +1618,23 @@ long do_fork(unsigned long clone_flags,
 			init_completion(&vfork);
 			get_task_struct(p);
 		}
+
+    /*
+     * If tl_max > 0 then we limit the number of concurrent threads
+     * and tl_root_pid != pid.  I don't think it is possible to enter here
+     * in such a way that p->tl_root_pid would ever equal p->pid... o well
+     */
+    if(atomic_read(&current->tl_max)){
+      /*
+       * If tl_lock is null then this is the first thread to be limited by the
+       * limiting process; we need to initialize the semaphore.
+       */
+      if(current->tl_lock == NULL){
+        p->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        sema_init(p->tl_lock, atomic_read(&p->tl_max));
+      }
+      down(p->tl_lock);
+    }
 
 		wake_up_new_task(p);
 

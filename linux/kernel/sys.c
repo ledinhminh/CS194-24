@@ -2170,9 +2170,14 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
         // unconcerned for negative values.
         error = -EINVAL;
       } else {
-        me->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
-        atomic_set(&me->tl_max, arg2);
-        sema_init(me->tl_lock, arg2);
+        if(me->tl_root_pid != NULL && me->tl_root_pid != me->pid){
+          error = -EINVAL;
+        } else {
+          me->tl_root_pid = me->pid;
+          atomic_set(&me->tl_max, arg2);
+          // me->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+          // sema_init(me->tl_lock, arg2);
+        }
       }
       break;
 		default:

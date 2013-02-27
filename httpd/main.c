@@ -274,7 +274,50 @@ void* start_thread(void *args)
 				INFO;printf("\n\n\nTHREAD %lu MANAGE ACCEPTED\n", (unsigned long)pthread_self() );
 				//an accepted socket fd
 				session = fd_list_find(events[index].data.fd);
+
+				//the session at this point can be either a socket_fd or a disk_fd, we should check
+				if (events[index].data.fd == session->fd)
+				{
+					//a socket fd, we should read from it
+					ssize_t readed;
+					while (
+						(readed = read(session->fd, session->buf + session->buf_used, 
+							session->buf_size - session->buf_used)) > 0)
+					{		
+					    if (readed > 0)
+					      session->buf_used += readed;
+
+					    if (session->buf_used >= session->buf_size)
+					    {
+					      session->buf_size *= 2;
+					      session->buf = prealloc(session->buf, session->buf_size);
+					    }
+					}
+
+					if (readed == 0)
+					{
+						//start processing request
+					}
+					else if (readed == EAGAIN)
+					{
+						struct epoll_event event;
+						event.data.fd = events[index].data.fd;
+						event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+						if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event))
+						{
+							perror("EPOLL MOD FAIL\n\n");
+						}
+						continue;
+					}
+				}
+				else
+				{
+					//a disk_fd, we should read from disk
+				}
+
+
 				line = session->gets(session);
+
 				if (line == NULL)
 				{
 					fprintf(stderr, "Client connected, but no lines could be read\n");

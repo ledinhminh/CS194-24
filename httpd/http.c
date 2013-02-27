@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "http.h"
 #include "lambda.h"
@@ -46,14 +47,11 @@ struct http_server *http_server_new(palloc_env env, short port)
 
     hs = palloc(env, struct http_server);
     if (hs == NULL)
-	return NULL;
+       return NULL;
 
-    hs->wait_for_client = &wait_for_client;
+   hs->wait_for_client = &wait_for_client;
 
-    if(0)
-        hs->fd = listen_on_port(port);
-
-    return hs;
+   return hs;
 }
 
 int listen_on_port(short port)
@@ -65,7 +63,7 @@ int listen_on_port(short port)
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
-	return -1;
+       return -1;
 
     /* SO_REUSEADDR allows a socket to bind to a port while there
      * are still outstanding TCP connections there.  This is
@@ -74,111 +72,115 @@ int listen_on_port(short port)
      * production, it has some security implications.  It's OK if
      * this fails, we'll just sometimes get more errors about the
      * socket being in use. */
-    so_true = true;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &so_true, sizeof(so_true));
+     so_true = true;
+     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &so_true, sizeof(so_true));
 
-    addr_len = sizeof(addr);
-    memset(&addr, 0, addr_len);
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(port);
-    if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0)
-    {
-	perror("Unable to bind to HTTP port");
-	close(fd);
-	return -1;
-    }
+     addr_len = sizeof(addr);
+     memset(&addr, 0, addr_len);
+     addr.sin_family = AF_INET;
+     addr.sin_addr.s_addr = INADDR_ANY;
+     addr.sin_port = htons(port);
 
-    if (listen(fd, MAX_PENDING_CONNECTIONS) < 0)
-    {
-	perror("Unable to listen on HTTP port");
-	close(fd);
-	return -1;
-    }
+     fprintf(stderr, "Binding on port %i\n", port);
+     if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0)
+     {
+         perror("Unable to bind to HTTP port");
+         close(fd);
+         return -1;
+     }
 
-    return fd;
-}
+     fprintf(stderr, "Listening on Socket\n");
+     if (listen(fd, MAX_PENDING_CONNECTIONS) < 0)
+     {
+         perror("Unable to listen on HTTP port");
+         close(fd);
+         return -1;
+     }
 
-struct http_session *wait_for_client(struct http_server *serv)
-{
+     return fd;
+ }
+
+ struct http_session *wait_for_client(struct http_server *serv)
+ {
     struct http_session *sess;
     struct sockaddr_in addr;
     socklen_t addr_len;
 
     sess = palloc(serv, struct http_session);
     if (sess == NULL)
-	return NULL;
+       return NULL;
 
-    sess->gets = &http_gets;
-    sess->puts = &http_puts;
-    sess->write = &http_write;
+   sess->gets = &http_gets;
+   sess->puts = &http_puts;
+   sess->write = &http_write;
 
-    sess->buf = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
-    memset(sess->buf, '\0', DEFAULT_BUFFER_SIZE);
-    sess->buf_size = DEFAULT_BUFFER_SIZE;
-    sess->buf_used = 0;
+   sess->buf = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
+   memset(sess->buf, '\0', DEFAULT_BUFFER_SIZE);
+   sess->buf_size = DEFAULT_BUFFER_SIZE;
+   sess->buf_used = 0;
 
     /* Wait for a client to connect. */
-    addr_len = sizeof(addr);
-    sess->fd = accept(serv->fd, (struct sockaddr *)&addr, &addr_len);
-    if (sess->fd < 0)
-    {
-	perror("Unable to accept on client socket");
-	pfree(sess);
-	return NULL;
-    }
+   addr_len = sizeof(addr);
+   sess->fd = accept(serv->fd, (struct sockaddr *)&addr, &addr_len);
+   if (sess->fd < 0)
+   {
+        fprintf(stderr, "ACCEPT ERRNO %i, %s\n", errno, strerror(errno));
+       perror("Unable to accept on client socket");
+       pfree(sess);
+       return NULL;
+   }
 
-    palloc_destructor(sess, &close_session);
+   palloc_destructor(sess, &close_session);
 
-    return sess;
+   return sess;
 }
 
 int close_session(struct http_session *s)
 {
     if (s->fd == -1)
-	return 0;
+       return 0;
 
-    close(s->fd);
-    s->fd = -1;
+   close(s->fd);
+   s->fd = -1;
 
-    return 0;
+   return 0;
 }
 
 const char *http_gets(struct http_session *s)
 {
     while (true)
     {
-	char *newline;
-	ssize_t readed;
+       char *newline;
+       ssize_t readed;
 
-	if ((newline = strstr(s->buf, "\r\n")) != NULL)
-	{
-	    char *new;
+       if ((newline = strstr(s->buf, "\r\n")) != NULL)
+       {
+           char *new;
 
-	    *newline = '\0';
-	    new = palloc_array(s, char, strlen(s->buf) + 1);
-	    strcpy(new, s->buf);
+           *newline = '\0';
+           new = palloc_array(s, char, strlen(s->buf) + 1);
+           strcpy(new, s->buf);
 
-	    memmove(s->buf, s->buf + strlen(new) + 2,
-		    s->buf_size - strlen(new) - 2);
-	    s->buf_used -= strlen(new) + 2;
-	    s->buf[s->buf_used] = '\0';
+           memmove(s->buf, s->buf + strlen(new) + 2,
+              s->buf_size - strlen(new) - 2);
+           s->buf_used -= strlen(new) + 2;
+           s->buf[s->buf_used] = '\0';
 
-	    return new;
-	}
+           return new;
+       }
 
-	readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
-	if (readed > 0)
-	    s->buf_used += readed;
+       readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
+       if (readed > 0)
+           s->buf_used += readed;
 
-	if (s->buf_used >= s->buf_size)
-	{
-	    s->buf_size *= 2;
-	    s->buf = prealloc(s->buf, s->buf_size);
-	}
-    }
+       if (s->buf_used >= s->buf_size)
+       {
+           s->buf_size *= 2;
+           s->buf = prealloc(s->buf, s->buf_size);
+       }
+   }
 
-    return NULL;
+   return NULL;
 }
 
 ssize_t http_puts(struct http_session *s, const char *m)
@@ -188,16 +190,16 @@ ssize_t http_puts(struct http_session *s, const char *m)
     written = 0;
     while (written < strlen(m))
     {
-	ssize_t writed;
+       ssize_t writed;
 
-	writed = write(s->fd, m + written, strlen(m) - written);
-	if (writed < 0)
-	    return -1 * written;
+       writed = write(s->fd, m + written, strlen(m) - written);
+       if (writed < 0)
+           return -1 * written;
 
-	written += writed;
-    }
+       written += writed;
+   }
 
-    return written;
+   return written;
 }
 
 ssize_t http_write(struct http_session *s, const char *m, size_t l)

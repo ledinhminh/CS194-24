@@ -189,6 +189,7 @@ void* start_thread(void *args)
 
 					if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 					{
+						//finished READ the headers 
 						DEBUG("done reading\n");
 						//start processing request
 						line = session->gets(session);

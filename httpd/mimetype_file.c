@@ -113,38 +113,53 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     }
     s->response = response;
     s->done_processing = 1;
+    DEBUG("Done Processing, %s\n", s->response);
     
     fd = open(real_path, O_RDONLY);
+    if (fd < 0)
+    {
+        perror("DISK FD is bad");
+    }
     s->disk_fd = fd;
+    DEBUG("DISK FD %i", s->disk_fd);
 
     read:
-
-    while ((readed = read(s->disk_fd, s->buf, s->buf_size - s->buf_used)) >= 0)
+    DEBUG("READ FROM DISK");
+    char *disk_buf;
+    size_t disk_buf_size, disk_buf_used;
+    disk_buf_used = 0;
+    while ((readed = read(s->disk_fd, disk_buf, disk_buf_size - disk_buf_used)) > 0)
     {
-        s->buf_used += readed;
+        DEBUG("Read Some from file\n");
+        disk_buf_used += readed;
 
-        if (s->buf_used >= s->buf_size)
+        if (disk_buf_used + 3 >= disk_buf_size)
         {
-            s->buf_size *= 2;
-            s->buf = prealloc(s->buf, s->buf_size);
+            disk_buf_size *= 2;
+            disk_buf = prealloc(s, disk_buf_size);
         }
     }
-    *(s->buf + s->buf_used + 1) = '\0';
-    psnprintf(s->response, s, "%s%s", s->response, s->buf);
+    DEBUG("BEFORE READ APPEND RESPONSE\n%s\n", s->response);
+    DEBUG("BEFORE READ APPEND BUF\n%s\n", s->buf);
+    *(disk_buf + disk_buf_used) = '\0';
+    psnprintf(s->response, s, "%s%s", s->response, disk_buf);
     s->done_reading = 1;
+    *(s->response + strlen(s->response)) = '\0';
+    DEBUG("Done Reading\n%s\n", s->response);
+    DEBUG("fjkdlajfkdlajfdsk");
 
- 
     write:
-    ;
+    DEBUG("STARTING WRITE");
     size_t written;
-
-    ssize_t response_length;
+    int response_length;
  
     written = 0;
     response_length = strlen(s->response);
+    DEBUG("Writing...%i", response_length); 
     while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)
     {
         s->buf_used += written;
+        DEBUG("write some...");
     }
     if (written == -1 && errno == EAGAIN)
     {
@@ -159,6 +174,10 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     else if(written == 0)
     {
         close(s->fd);
+    }
+    else
+    {
+        perror("Writing to Socket error");
     }
 
     return 0;

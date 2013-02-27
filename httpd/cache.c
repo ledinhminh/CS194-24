@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "palloc.h"
 #include "cache.h"
@@ -16,6 +17,7 @@ palloc_env* envp;
 int num_entries;
 struct cache_entry* cache;
 struct cache_entry* tail;
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 void cache_init(palloc_env env) {
     envp = &env;
@@ -30,7 +32,16 @@ void cache_init(palloc_env env) {
 /* String will be duplicated. Caller is responsible for deallocating the passed-in string */
 void cache_add(const char* request, char* response) {
     int add_entry = 0;
+    
+    // We get called even if errno ENOENT up the anus.
+    if (NULL == response) {
+        INFO; printf("NULL response. what were you thinking?\n");
+        return;
+    }
+    
     INFO; printf("num_entries=%d, cache=%p, tail=%p\n", num_entries, cache, tail);
+    
+    pthread_mutex_lock(&lock);
     
     if (CACHE_SIZE == num_entries) { // Time to shuffle.
         INFO; printf("cache is full\n");
@@ -44,6 +55,7 @@ void cache_add(const char* request, char* response) {
             cache->next = NULL;
             tail = cache;
             cache = temp;
+            pthread_mutex_unlock(&lock);
         } else { // Not used, free entry and add new entry
             // This sounds inefficient but palloc hands us the chunk of memory right back
             INFO; printf("entry (%s) not used, deleting\n", cache->request);
@@ -71,6 +83,7 @@ void cache_add(const char* request, char* response) {
         tail->request = palloc_strdup(tail, request);
         tail->response = palloc_strdup(tail, response);
         tail->next = NULL;
+        pthread_mutex_unlock(&lock);
     }
 }
 

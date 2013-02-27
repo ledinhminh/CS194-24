@@ -40,10 +40,10 @@ struct mimetype *mimetype_new(palloc_env env, const char *path)
     // Now is the time.
     
     is_executable = access(fullpath, X_OK);
-    INFO; printf("is_executable=%d\n", is_executable);
+    DEBUG("is_executable=%d\n", is_executable);
     
     if (0 == is_executable) {
-        INFO; printf("calling mimetype_cgi_new\n");
+        DEBUG("calling mimetype_cgi_new\n");
         mt = mimetype_cgi_new(env, fullpath);
     } else {
         mt = mimetype_file_new(env, fullpath);

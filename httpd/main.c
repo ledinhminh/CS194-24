@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 		method, file, version);
 
     headers = palloc(session, struct http_header);
-    INFO; printf("new http_headers at %p\n", headers);
+    DEBUG("new http_headers at %p\n", headers);
     session->headers = headers;
 	/* Skip the remainder of the lines */
     // We can't do this now -- must examine them for If-None-Match

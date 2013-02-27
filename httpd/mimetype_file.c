@@ -68,8 +68,8 @@ int http_get(struct mimetype *mt, struct http_session *s)
     real_path = palloc_array(s, char, real_path_len + 1);
     strncpy(real_path, mtf->fullpath, real_path_len);
     *(real_path + real_path_len) = '\0';
-    INFO; printf("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);    
-    INFO; printf("query string: %s\n", query_string);
+    DEBUG("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);    
+    DEBUG("query string: %s\n", query_string);
     
     // We'll just use the st_mtime for ETag.
     stat(real_path, &file_info);
@@ -94,7 +94,7 @@ int http_get(struct mimetype *mt, struct http_session *s)
     
     // ETag matched in header processing. Issue a 304 and return
     if (0 == etag_matches) {
-        INFO; printf("ETag matched; returning 304\n");
+        DEBUG("ETag matched; returning 304\n");
         s->puts(s, "HTTP/1.1 304 Not Modified\r\n");
         s->puts(s, etag_string);
         s->puts(s, date_string);
@@ -114,7 +114,7 @@ int http_get(struct mimetype *mt, struct http_session *s)
     cache_hit = cache_lookup(s, real_path);
     
     if (NULL != cache_hit) {
-        INFO; printf("serving request from cache...\n");
+        DEBUG("serving request from cache...\n");
         int cache_len = strlen(cache_hit);
         ssize_t written, w;
         written = w = 0;
@@ -152,7 +152,7 @@ int http_get(struct mimetype *mt, struct http_session *s)
                 }
             }
         }
-        INFO; printf("writing hit to cache...\n");
+        DEBUG("writing hit to cache...\n");
         cache_add(real_path, cache_hit);
     }
     

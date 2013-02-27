@@ -43,17 +43,17 @@ static int make_socket_non_blocking (int sfd)
 
   flags = fcntl (sfd, F_GETFL, 0);
   if (flags == -1)
-    {
-      perror ("fcntl couldn't get flags");
-      return -1;
-    }
+  {
+    perror ("fcntl couldn't get flags");
+    return -1;
+  }
 
   flags |= O_NONBLOCK;
   if (fcntl (sfd, F_SETFL, flags) == -1)
-    {
-      perror ("fcntl could set nonblock flag");
-      return -1;
-    }
+  {
+    perror ("fcntl could set nonblock flag");
+    return -1;
+  }
 
   return 0;
 }
@@ -107,8 +107,8 @@ void* start_thread(void *args)
 		for (index = 0; index < num_active_epoll; index++)
 		{
 			if ((events[index].events & EPOLLERR) ||
-				(events[index].events & EPOLLHUP) ||
-				(!(events[index].events & EPOLLIN)))
+          (events[index].events & EPOLLHUP) ||
+          (!(events[index].events & EPOLLIN)))
 			{
 				//something happened, the socket closed so we should close
 				//it on our side
@@ -146,20 +146,20 @@ void* start_thread(void *args)
 				}
 
 				fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-					method, file, version);
+                method, file, version);
 
 				headers = palloc(env, struct http_header);
 				INFO; printf("new http_headers at %p\n", headers);
 				session->headers = headers;
 				/* Skip the remainder of the lines */
-	    		// We can't do this now -- must examine them for If-None-Match
+        // We can't do this now -- must examine them for If-None-Match
 				while ((line = session->gets(session)) != NULL)
 				{
 					size_t len;
 
 					len = strlen(line);
 					fprintf(stderr, "[%04lu] < %s\n", len, line);
-	   				// pfree(line);
+          // pfree(line);
 					headers->header = line;
 					next_header = palloc(env, struct http_header);
 					headers->next = next_header;
@@ -184,21 +184,21 @@ void* start_thread(void *args)
 					abort();
 				}
 
-				cleanup:
+      cleanup:
 				pfree(session);
 
-    			// Now we also have to clean up the header list. What a pain
+        // Now we also have to clean up the header list. What a pain
 				do  {
-        			// If we overshot, go home
+          // If we overshot, go home
 					if (NULL == next_header->header)
 						continue;
-        			// Free the string.
+          // Free the string.
 					pfree(headers->header);
-        			// Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
+          // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
 					pfree(headers);
 				} while (NULL != (headers = headers->next));
 
-				rearm:
+      rearm:
 				//rearm the socket
 				INFO;printf("THREAD %lu REARM\n\n\n", (unsigned long)pthread_self() );
 				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &(events[index]));
@@ -216,22 +216,22 @@ int main(int argc, char **argv)
 	struct http_server *server;
 	// SINGLE -----
 
-    // MULTI ------
-    	//server stuff
-    struct server_thread_args thread_args;
+  // MULTI ------
+  //server stuff
+  struct server_thread_args thread_args;
 	int debug_threaded;
-		//network stuff
+  //network stuff
 	int socket_fd;
-		//epoll stuff
+  //epoll stuff
 	int epoll_fd;
 	struct epoll_event event;
-		//threading stuff
+  //threading stuff
 	pthread_t thread1;
 	pthread_t thread2;
-    // MULTI ------
+  // MULTI ------
 
 	//Create server environment
-	fprintf(stderr, "initializing env\n");	
+	fprintf(stderr, "initializing env\n");
 	env = palloc_init("httpd root context");
 
 	//Create a listening sockent and listen on it
@@ -268,7 +268,7 @@ int main(int argc, char **argv)
 	}
 
 	//populate the thread arguments
-	//each thread needs information so we pass it to them in a struct	
+	//each thread needs information so we pass it to them in a struct
 	thread_args.listen_socket_fd = socket_fd;
 	thread_args.thread_env = &env;
 	thread_args.epoll_fd = epoll_fd;
@@ -323,20 +323,20 @@ int main(int argc, char **argv)
 			}
 
 			fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-				method, file, version);
+              method, file, version);
 
 			headers = palloc(env, struct http_header);
 			INFO; printf("new http_headers at %p\n", headers);
 			session->headers = headers;
-	//Skip the remainder of the lines 
-    // We can't do this now -- must examine them for If-None-Match
+      //Skip the remainder of the lines
+      // We can't do this now -- must examine them for If-None-Match
 			while ((line = session->gets(session)) != NULL)
 			{
 				size_t len;
 
 				len = strlen(line);
 				fprintf(stderr, "[%04lu] < %s\n", len, line);
-	    // pfree(line);
+        // pfree(line);
 				headers->header = line;
 				next_header = palloc(env, struct http_header);
 				headers->next = next_header;
@@ -361,10 +361,10 @@ int main(int argc, char **argv)
 				abort();
 			}
 
-			cleanup:
+    cleanup:
 			pfree(session);
 
-    // Now we also have to clean up the header list. What a pain
+      // Now we also have to clean up the header list. What a pain
 			do  {
         // If we overshot, go home
 				if (NULL == next_header->header)
@@ -378,8 +378,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-    pthread_join( thread1, NULL);
-    pthread_join( thread2, NULL);
+  pthread_join( thread1, NULL);
+  pthread_join( thread2, NULL);
 
 	return 0;
 }

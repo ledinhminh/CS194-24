@@ -981,10 +981,12 @@ void do_exit(long code)
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
 
   if(atomic_read(&tsk->tl_max) && tsk->tl_root_pid != tsk->pid){
-    /*
-     * TODO: If tl_lock == tl_max should free semaphores?
-     */
     up(tsk->tl_lock); /* allow more threads to start */
+    if(down_trylock(tsk->tl_running)){
+      /* Free memory associated with tl_lock and tl_running */
+      kfree(tsk->tl_lock);
+      kfree(tsk->tl_running);
+    }
   }
 
 	schedule();

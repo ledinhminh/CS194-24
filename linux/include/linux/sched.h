@@ -1573,6 +1573,13 @@ struct task_struct {
    * If ever after decrementing it reaches tl_max then free data
    */
   struct semaphore* tl_lock;
+
+  /* tl_running will start at 0 and increment for each running thread. If
+     tl_running ever reaches 0 then we need to free the memory associated
+     with tl_lock and tl_running. Use down_trylock() do decrement and if that
+     function return 1 then free tl_lock and tl_running.
+   */
+  struct semaphore* tl_running;
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

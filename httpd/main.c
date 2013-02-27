@@ -163,7 +163,6 @@ void* start_thread(void *args)
 
 	//epoll stuff
 	struct epoll_event *events;
-	struct epoll_event event;
 
 	//argument stuff
 	struct server_thread_args *targ;
@@ -181,14 +180,11 @@ void* start_thread(void *args)
 	//create epoll list to store events that need to be handled
 	events = palloc_array(env, struct epoll_event, MAX_EVENTS);
 
-	//for the accept socket event
-	event.data.fd = socket_fd;
-	event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
 	//i think this will go away eventually
 	server = http_server_new((palloc_env*) targ->thread_env, PORT);
 	server->fd = socket_fd;
 
-	fprintf(stderr, "Started the Thread\n");
+	fprintf(stderr, "Started the Thread with fd %i\n", socket_fd);
 
 	if (server == NULL)
 	{
@@ -211,6 +207,10 @@ void* start_thread(void *args)
 		int num_active_epoll, index;
 
 		num_active_epoll = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+		if (num_active_epoll < 0){
+			perror("EPOLL SADNESS\n");
+			exit(1);
+		}
 		for (index = 0; index < num_active_epoll; index++)
 		{
 			if ((events[index].events & EPOLLERR) ||
@@ -218,7 +218,7 @@ void* start_thread(void *args)
 			{
 				//something happened, the socket closed so we should close
 				//it on our side
-				fprintf(stderr, "epoll error\n");
+				INFO;fprintf(stderr, "epoll error\n");
 				//TODO: remove fd from structure
 				close(events[index].data.fd);
 				continue;
@@ -247,9 +247,10 @@ void* start_thread(void *args)
 				fd_list_add(env, session->fd, session);
 
 				//Add the accepted socket into epoll
-				event.data.fd = session->fd;
-				event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &event) < 0)
+				struct epoll_event sess_event;
+				sess_event.data.fd = session->fd;
+				sess_event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &sess_event) < 0)
 				{
 					perror("Couldn't add socket to epoll");
 					goto rearm;
@@ -355,10 +356,6 @@ int main(int argc, char **argv)
 {
 	palloc_env env;
 
-	// SINGLE -----
-	struct http_server *server;
-	// SINGLE -----
-
   // MULTI ------
   //server stuff
   struct server_thread_args thread_args;
@@ -374,17 +371,18 @@ int main(int argc, char **argv)
   // MULTI ------
 
 	//Create server environment
-	fprintf(stderr, "initializing env\n");
+	INFO;fprintf(stderr, "initializing env\n");
 	env = palloc_init("httpd root context");
 
 	//Create a listening sockent and listen on it
-	fprintf(stderr, "listening on port\n");
+	INFO;fprintf(stderr, "listening on port\n");
 	socket_fd = listen_on_port(PORT);
 	if(socket_fd < 0)
 	{
 		perror("Couldn't open/listen on PORT");
 		return -1;
 	}
+	INFO;fprintf(stderr, "Listen FD %i\n", socket_fd);
 
 	if(make_socket_non_blocking(socket_fd) < 0)
 	{
@@ -393,7 +391,7 @@ int main(int argc, char **argv)
 	}
 
 	//Create a new epoll structure
-	fprintf(stderr, "Creating new EPOLL\n");
+	INFO;fprintf(stderr, "Creating new EPOLL\n");
 	epoll_fd = epoll_create1(0);
 	if(epoll_fd < 0)
 	{
@@ -416,6 +414,8 @@ int main(int argc, char **argv)
 	thread_args.thread_env = &env;
 	thread_args.epoll_fd = epoll_fd;
 
+	INFO;printf("\nUSING FD %i", socket_fd);
+
 	debug_threaded = 1; //set to 0 if you want to revert to the old server
 	if (debug_threaded){
 		pthread_create(&thread1, NULL, start_thread, (void*) &thread_args);
@@ -423,102 +423,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		fprintf(stderr, "Started non thread\n");
-		server = http_server_new(env, PORT);
-		if (server == NULL)
-		{
-			perror("Unable to open HTTP server");
-			return 1;
-		}
 
-		while (true)
-		{
-			struct http_session *session;
-			const char *line;
-			char *method, *file, *version;
-			struct mimetype *mt;
-			int mterr;
-			struct http_header* headers;
-			struct http_header* next_header;
-
-			session = server->wait_for_client(server);
-			if (session == NULL)
-			{
-				perror("server->wait_for_client() returned NULL...");
-				pfree(server);
-				return 1;
-			}
-
-			line = session->gets(session);
-			if (line == NULL)
-			{
-				fprintf(stderr, "Client connected, but no lines could be read\n");
-				goto cleanup;
-			}
-
-			method = palloc_array(session, char, strlen(line));
-			file = palloc_array(session, char, strlen(line));
-			version = palloc_array(session, char, strlen(line));
-			if (sscanf(line, "%s %s %s", method, file, version) != 3)
-			{
-				fprintf(stderr, "Improper HTTP request\n");
-				goto cleanup;
-			}
-
-			fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-              method, file, version);
-
-			headers = palloc(env, struct http_header);
-			INFO; printf("new http_headers at %p\n", headers);
-			session->headers = headers;
-      //Skip the remainder of the lines
-      // We can't do this now -- must examine them for If-None-Match
-			while ((line = session->gets(session)) != NULL)
-			{
-				size_t len;
-
-				len = strlen(line);
-				fprintf(stderr, "[%04lu] < %s\n", len, line);
-        // pfree(line);
-				headers->header = line;
-				next_header = palloc(env, struct http_header);
-				headers->next = next_header;
-				headers = next_header;
-
-				if (len == 0)
-					break;
-			}
-
-			mt = mimetype_new(session, file);
-			if (strcasecmp(method, "GET") == 0)
-				mterr = mt->http_get(mt, session);
-			else
-			{
-				fprintf(stderr, "Unknown method: '%s'\n", method);
-				goto cleanup;
-			}
-
-			if (mterr != 0)
-			{
-				perror("unrecoverable error while processing a client");
-				abort();
-			}
-
-    cleanup:
-			pfree(session);
-
-      // Now we also have to clean up the header list. What a pain
-			do  {
-        // If we overshot, go home
-				if (NULL == next_header->header)
-					continue;
-        // Free the string.
-				pfree(headers->header);
-        // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
-				pfree(headers);
-			} while (NULL != (headers = headers->next));
-
-		}
 	}
 
   pthread_join( thread1, NULL);

@@ -8,6 +8,8 @@
 #include "palloc.h"
 #include "debug.h"
 #include "cache.h"
+#include <sys/prctl.h> /* needed to limit the number of threads for children */
+#include <unistd.h>    /* needed to determine number of CPUs */
 
 #define PORT 8088
 #define LINE_MAX 1024
@@ -16,6 +18,12 @@ int main(int argc, char **argv)
 {
     palloc_env env;
     struct http_server *server;
+
+    /*
+     * Limit number of child threads to the number of CPUs.
+     * Not sure why I cannot use the constant PR_SET_THREAD_LIMIT.
+     */
+    prctl(41, sysconf(_SC_NPROCESSORS_ONLN));
 
     env = palloc_init("httpd root context");
     cache_init(env);
@@ -101,7 +109,7 @@ int main(int argc, char **argv)
 
     cleanup:
 	pfree(session);
-    
+
     }
 
     return 0;

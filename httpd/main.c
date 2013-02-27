@@ -26,16 +26,15 @@ struct server_thread_args
 	int listen_socket_fd;
 	int epoll_fd;
 	palloc_env* thread_env;
+	struct fd_list* fd_list_head;
 };
 
-struct fd_container
+struct fd_list
 {
 	int fd;
-	int type;
 	struct http_session *session;
+	struct fd_list* next;
 };
-
-
 
 static int make_socket_non_blocking (int sfd)
 {
@@ -64,6 +63,7 @@ void* start_thread(void *args)
 
 	//epoll stuff
 	struct epoll_event *events;
+	struct epoll_event event;
 
 	//argument stuff
 	struct server_thread_args *targ;
@@ -80,6 +80,10 @@ void* start_thread(void *args)
 
 	//create epoll list to store events that need to be handled
 	events = palloc_array(env, struct epoll_event, MAX_EVENTS);
+
+	//for the accept socket event
+	event.data.fd = socket_fd;
+	event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
 	//i think this will go away eventually
 	server = http_server_new((palloc_env*) targ->thread_env, PORT);
 	server->fd = socket_fd;
@@ -107,18 +111,18 @@ void* start_thread(void *args)
 		for (index = 0; index < num_active_epoll; index++)
 		{
 			if ((events[index].events & EPOLLERR) ||
-				(events[index].events & EPOLLHUP) ||
-				(!(events[index].events & EPOLLIN)))
+				(events[index].events & EPOLLHUP))
 			{
 				//something happened, the socket closed so we should close
 				//it on our side
 				fprintf(stderr, "epoll error\n");
+				//TODO: remove fd from structure
 				close(events[index].data.fd);
 				continue;
 			}
 			else if (events[index].data.fd == socket_fd)
 			{
-				//accept the socket
+				//accept the socket and create a session from it
 				INFO;printf("THREAD %lu GOT STUFF\n\n\n", (unsigned long)pthread_self() );
 				session = server->wait_for_client(server);
 
@@ -127,6 +131,13 @@ void* start_thread(void *args)
 					fprintf(stderr, "server->wait_for_client() returned NULL...\n");
 					goto rearm;
 				}
+
+				//add session to a fd_container and add it to someplace
+
+
+			}
+			else
+			{
 
 				line = session->gets(session);
 				if (line == NULL)
@@ -200,8 +211,16 @@ void* start_thread(void *args)
 
 				rearm:
 				//rearm the socket
-				INFO;printf("THREAD %lu REARM\n\n\n", (unsigned long)pthread_self() );
-				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &(events[index]));
+				//not sure why, but we have to rearm the socket with the listening socket descriptor
+				//with another instance with the correct event flags...
+				//I guess that the event flags are cleared.
+				INFO;printf("THREAD %lu REARM\n", (unsigned long)pthread_self() );
+				INFO;printf("THREAD FLAG %i, %i\n", events[index].events, event.events);
+				INFO;printf("THREAD FD %i, %i\n\n\n", events[index].data.fd, event.data.fd);
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event))
+				{
+					perror("EPOLL MOD FAIL\n\n");
+				}
 
 			} //end of else if
 		} //end of epoll event for
@@ -219,6 +238,7 @@ int main(int argc, char **argv)
     // MULTI ------
     	//server stuff
     struct server_thread_args thread_args;
+    struct fd_list* fd_list_head;
 	int debug_threaded;
 		//network stuff
 	int socket_fd;
@@ -272,6 +292,7 @@ int main(int argc, char **argv)
 	thread_args.listen_socket_fd = socket_fd;
 	thread_args.thread_env = &env;
 	thread_args.epoll_fd = epoll_fd;
+	thread_args.fd_list_head = fd_list_head;
 
 	debug_threaded = 1; //set to 0 if you want to revert to the old server
 	if (debug_threaded){

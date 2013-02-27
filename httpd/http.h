@@ -25,7 +25,8 @@ struct http_session
     char *buf;
     size_t buf_size, buf_used;
 
-    int fd;
+    int fd; //network fd
+    int disk_fd; //disk fd
     
     struct http_header* headers;
 };

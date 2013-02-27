@@ -27,8 +27,11 @@ struct http_session
 
     int fd; //network fd
     int disk_fd; //disk fd
-    
+    int done_processing; //0 is haven't read, 1 if we did
+    int done_reading;
     struct http_header* headers;
+
+    char* response;
 };
 
 /* A server that listens for HTTP connections on a given port. */

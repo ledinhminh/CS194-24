@@ -164,16 +164,19 @@ void* start_thread(void *args)
 
 				// An accepted socket fd
 				session = fd_list_find(events[index].data.fd);
+				DEBUG("session=%p\n", session);
 
 				//the session at this point can be either a socket_fd or a disk_fd, we should check
 				if (events[index].data.fd == session->fd)
 				{
+					DEBUG("handling network fd\n");
 					//a socket fd, we should read from it
 					ssize_t readed;
 					while (
 						(readed = read(session->fd, session->buf + session->buf_used, 
 							session->buf_size - session->buf_used)) > 0)
 					{		
+						DEBUG("read a bit, buf=%s\n", session->buf);
 					    if (readed > 0)
 					      session->buf_used += readed;
 
@@ -184,16 +187,71 @@ void* start_thread(void *args)
 					    }
 					}
 
-					if (readed == 0)
+					if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 					{
+						DEBUG("done reading\n");
 						//start processing request
+						line = session->gets(session);
+						if (line == NULL)
+						{
+							fprintf(stderr, "Client connected, but no lines could be read\n");
+							goto cleanup;
+						}
+
+						method = palloc_array(session, char, strlen(line));
+						file = palloc_array(session, char, strlen(line));
+						version = palloc_array(session, char, strlen(line));
+						if (sscanf(line, "%s %s %s", method, file, version) != 3)
+						{
+							fprintf(stderr, "Improper HTTP request\n");
+							goto cleanup;
+						}
+
+						fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
+							method, file, version);
+
+						headers = palloc(session, struct http_header);
+						DEBUG("new http_headers at %p\n", headers);
+						session->headers = headers;
+
+						while ((line = session->gets(session)) != NULL)
+						{
+							size_t len;
+
+							len = strlen(line);
+							fprintf(stderr, "[%04lu] < %s\n", len, line);
+							headers->header = line;
+							next_header = palloc(session, struct http_header);
+							headers->next = next_header;
+							headers = next_header;
+
+							if (len == 0)
+								break;
+						}
+						mt = mimetype_new(session, file);
+						if (strcasecmp(method, "GET") == 0)
+							mterr = mt->http_get(mt, session, epoll_fd);
+						else
+						{
+							fprintf(stderr, "Unknown method: '%s'\n", method);
+							goto cleanup;
+						}
+
+						if (mterr != 0)
+						{
+							perror("unrecoverable error while processing a client");
+							abort();
+						}
 					}
-					else if (readed == EAGAIN)
+					else if (readed == -1 && errno == EAGAIN)
 					{
+						//We got an EGAIN from reading from socket into buffer
+						//We need to rearm
+						DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
 						struct epoll_event event;
-						event.data.fd = events[index].data.fd;
+						event.data.fd = session->fd;
 						event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-						if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event))
+						if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
 						{
 							perror("EPOLL MOD FAIL\n\n");
 						}
@@ -203,67 +261,30 @@ void* start_thread(void *args)
 				else
 				{
 					//a disk_fd, we should read from disk
+					if (strcasecmp(method, "GET") == 0)
+						mterr = mt->http_get(mt, session, epoll_fd);
+					else
+					{
+						fprintf(stderr, "Unknown method: '%s'\n", method);
+						goto cleanup;
+					}
+
+					if (mterr != 0)
+					{
+						perror("unrecoverable error while processing a client");
+						abort();
+					}
+
 				}
 
 
-				line = session->gets(session);
-				if (line == NULL)
-				{
-					fprintf(stderr, "Client connected, but no lines could be read\n");
-					goto cleanup;
-				}
-
-				method = palloc_array(session, char, strlen(line));
-				file = palloc_array(session, char, strlen(line));
-				version = palloc_array(session, char, strlen(line));
-				if (sscanf(line, "%s %s %s", method, file, version) != 3)
-				{
-					fprintf(stderr, "Improper HTTP request\n");
-					goto cleanup;
-				}
-
-				fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-                method, file, version);
-
-				headers = palloc(session, struct http_header);
-				DEBUG("new http_headers at %p\n", headers);
-				session->headers = headers;
-
-				while ((line = session->gets(session)) != NULL)
-				{
-					size_t len;
-
-					len = strlen(line);
-					fprintf(stderr, "[%04lu] < %s\n", len, line);
-					headers->header = line;
-					next_header = palloc(session, struct http_header);
-					headers->next = next_header;
-					headers = next_header;
-
-					if (len == 0)
-						break;
-				}
-
-				mt = mimetype_new(session, file);
-				if (strcasecmp(method, "GET") == 0)
-					mterr = mt->http_get(mt, session);
-				else
-				{
-					fprintf(stderr, "Unknown method: '%s'\n", method);
-					goto cleanup;
-				}
-
-				if (mterr != 0)
-				{
-					perror("unrecoverable error while processing a client");
-					abort();
-				}
 
 				cleanup:
-				close(session->fd);
-				pfree(session);
+				(void) 5;
+				// close(session->fd);
+				//pfree(session);
                 
-                DEBUG("finished processing request\n");
+                //DEBUG("finished processing request\n");
 				
 			} //end of else if
 		} //end of epoll event for
@@ -300,7 +321,7 @@ int main(int argc, char **argv)
 	}
 
 	//Create a new epoll structure
-	DEBUG(stderr, "Creating new EPOLL\n");
+	DEBUG("Creating new EPOLL\n");
 	epoll_fd = epoll_create1(0);
 	if(epoll_fd < 0)
 	{

@@ -9,13 +9,15 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
 
 #define BUF_COUNT 4096
 #define IF_NONE_MATCH "If-None-Match: "
 
-static int http_get(struct mimetype *mt, struct http_session *s);
+static int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd);
 
 struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath)
 {
@@ -33,11 +35,16 @@ struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath)
     return &(mtf->mimetype);
 }
 
-int http_get(struct mimetype *mt, struct http_session *s)
+int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 {
+    if (s->done_reading)
+        goto write;
+    if (s->done_processing)
+        goto read;
+
+
     struct mimetype_file *mtf;
     int fd;
-    char buf[BUF_COUNT];
     ssize_t readed;
     char* query_string;
     char* real_path;
@@ -87,51 +94,72 @@ int http_get(struct mimetype *mt, struct http_session *s)
         }
     } while (NULL != (next_header = next_header->next));
     
+    char* response;
     // ETag matched in header processing. Issue a 304 and return
     if (0 == etag_matches) {
-        INFO; printf("etag matched; returning 304\n");
-        s->puts(s, "HTTP/1.1 304 Not Modified\r\n");
-        s->puts(s, etag_string);
-        s->puts(s, date_string);
-        s->puts(s, "\r\n");
-        
-        pfree(real_path);
-        pfree(time_repr);
-        pfree(etag_string);
-        pfree(date_string);
-        return 0;
+        DEBUG("ETag matched, retuning 304\n");
+        psnprintf(response, s, "%s%s%s%s",
+            "HTTP/1.1 304 Not Modified\r\n",
+            etag_string,
+            date_string,
+            "\r\n");
+    } else {
+        psnprintf(response, s, "%s%s%s%s%s",
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Type: text/html\r\n",
+            "Cache-Control: max-age=365, public\r\n",
+            etag_string,
+            "\r\n");
     }
-    
-    s->puts(s, "HTTP/1.1 200 OK\r\n");
-    s->puts(s, "Content-Type: text/html\r\n");
-    // Enforced caching -- browsers will not send I-N-M until after the max-age has passed.
-    s->puts(s, "Cache-Control: max-age=365, public\r\n");
-    s->puts(s, etag_string);
-    s->puts(s, "\r\n");
+    s->response = response;
+    s->done_processing = 1;
     
     fd = open(real_path, O_RDONLY);
+    s->disk_fd = fd;
 
-    while ((readed = read(fd, buf, BUF_COUNT)) > 0)
+    read:
+
+    while ((readed = read(s->disk_fd, s->buf, s->buf_size - s->buf_used)) >= 0)
     {
-	ssize_t written;
+        s->buf_used += readed;
 
-	written = 0;
-	while (written < readed)
-	{
-	    ssize_t w;
-
-	    w = s->write(s, buf+written, readed-written);
-	    if (w > 0)
-		written += w;
-	}
+        if (s->buf_used >= s->buf_size)
+        {
+            s->buf_size *= 2;
+            s->buf = prealloc(s->buf, s->buf_size);
+        }
     }
-    
-    pfree(etag_string);
-    pfree(date_string);
-    pfree(time_repr);
-    pfree(real_path);
+    *(s->buf + s->buf_used + 1) = '\0';
+    psnprintf(s->response, s, "%s%s", s->response, s->buf);
+    s->done_reading = 1;
 
-    close(fd);
+ 
+    write:
+    ;
+    size_t written;
+
+    ssize_t response_length;
+ 
+    written = 0;
+    response_length = strlen(s->response);
+    while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)
+    {
+        s->buf_used += written;
+    }
+    if (written == -1 && errno == EAGAIN)
+    {
+        struct epoll_event event;
+        event.data.fd = s->fd;
+        event.events = EPOLLOUT | EPOLLET | EPOLLONESHOT;
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, s->fd, &event) < 0)
+        {
+            perror("Couldn't arm socked fd to epoll");
+        }
+    }
+    else if(written == 0)
+    {
+        close(s->fd);
+    }
 
     return 0;
 }

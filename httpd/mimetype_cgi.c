@@ -23,7 +23,7 @@
 
 #define CGI_SERVER_PROTOCOL "HTTP/1.1"
 
-static int http_get(struct mimetype *mt, struct http_session *s);
+static int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd);
 
 struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath)
 {
@@ -42,8 +42,9 @@ struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath)
     return &(mtc->mimetype);
 }
 
-int http_get(struct mimetype *mt, struct http_session *s)
+int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 {
+    (void) epoll_fd;
     struct mimetype_cgi *mtc;
     FILE* fp;
     int fd;

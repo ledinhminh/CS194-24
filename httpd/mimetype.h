@@ -8,7 +8,7 @@
 
 struct mimetype
 {
-    int (*http_get)(struct mimetype *, struct http_session *);
+    int (*http_get)(struct mimetype *, struct http_session *, int epoll_fd);
 };
 
 void mimetype_init(struct mimetype *mt);

@@ -148,10 +148,10 @@ int close_session(struct http_session *s)
 
 const char *http_gets(struct http_session *s)
 {
-  while (true)
-  {
+  // while (true)
+  // {
     char *newline;
-    ssize_t readed;
+    // ssize_t readed;
 
     if ((newline = strstr(s->buf, "\r\n")) != NULL)
     {
@@ -169,16 +169,16 @@ const char *http_gets(struct http_session *s)
       return new;
     }
 
-    readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
-    if (readed > 0)
-      s->buf_used += readed;
+    // readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
+    // if (readed > 0)
+    //   s->buf_used += readed;
 
-    if (s->buf_used >= s->buf_size)
-    {
-      s->buf_size *= 2;
-      s->buf = prealloc(s->buf, s->buf_size);
-    }
-  }
+    // if (s->buf_used >= s->buf_size)
+    // {
+    //   s->buf_size *= 2;
+    //   s->buf = prealloc(s->buf, s->buf_size);
+    // }
+  // }
 
   return NULL;
 }

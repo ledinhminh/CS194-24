@@ -44,3 +44,12 @@ file /var/www/webclock .obj/webclock 555 0 0
 file /var/www/webclock.dl .obj/webclock 444 0 0
 file /var/www/hourclock .obj/hourclock 555 0 0
 file /var/www/test.html www/test.html 666 0 0
+file /var/www/test1.html www/test.html 666 0 0
+file /var/www/test2.html www/test.html 666 0 0
+file /var/www/test3.html www/test.html 666 0 0
+file /var/www/test4.html www/test.html 666 0 0
+file /var/www/test5.html www/test.html 666 0 0
+file /var/www/test6.html www/test.html 666 0 0
+file /var/www/test7.html www/test.html 666 0 0
+file /var/www/test8.html www/test.html 666 0 0
+file /var/www/test9.html www/test.html 666 0 0

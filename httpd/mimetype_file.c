@@ -3,6 +3,7 @@
 #include "palloc.h"
 #include "mimetype_file.h"
 #include "debug.h"
+#include "cache.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -50,7 +51,11 @@ int http_get(struct mimetype *mt, struct http_session *s)
     char* date_string;
     char strftime_buffer[1024];
     struct http_header* next_header;
-    int etag_matches;
+    int etag_matches = -1; // -1 = no match by default; 0 = match (blame strcmp)
+    
+    char* cache_hit;
+    
+    // Strings will be deallocated by pfree(session) sometime in main.c. Thank you based palloc
 
     mtf = palloc_cast(mt, struct mimetype_file);
     if (mtf == NULL)
@@ -89,48 +94,68 @@ int http_get(struct mimetype *mt, struct http_session *s)
     
     // ETag matched in header processing. Issue a 304 and return
     if (0 == etag_matches) {
-        INFO; printf("etag matched; returning 304\n");
+        INFO; printf("ETag matched; returning 304\n");
         s->puts(s, "HTTP/1.1 304 Not Modified\r\n");
         s->puts(s, etag_string);
         s->puts(s, date_string);
         s->puts(s, "\r\n");
-        
-        pfree(real_path);
-        pfree(time_repr);
-        pfree(etag_string);
-        pfree(date_string);
+
         return 0;
     }
     
     s->puts(s, "HTTP/1.1 200 OK\r\n");
     s->puts(s, "Content-Type: text/html\r\n");
-    // Enforced caching -- browsers will not send I-N-M until after the max-age has passed.
     s->puts(s, "Cache-Control: max-age=365, public\r\n");
+    // Enforced caching -- browsers will not send I-N-M until after the max-age has passed.
     s->puts(s, etag_string);
     s->puts(s, "\r\n");
     
-    fd = open(real_path, O_RDONLY);
+    // But can we serve from cache?
+    cache_hit = cache_lookup(s, real_path);
+    
+    if (NULL != cache_hit) {
+        INFO; printf("serving request from cache...\n");
+        int cache_len = strlen(cache_hit);
+        ssize_t written, w;
+        written = w = 0;
+        
+        while (written < cache_len) {
+            w = s->write(s, buf + written, cache_len - written);
+            if (w > 0) // ignore errno! yeah!
+                written += w;
+        }
+    } else {
+        fd = open(real_path, O_RDONLY);
 
-    while ((readed = read(fd, buf, BUF_COUNT)) > 0)
-    {
-	ssize_t written;
+        while ((readed = read(fd, buf, BUF_COUNT)) > 0) {
+            ssize_t written;
 
-	written = 0;
-	while (written < readed)
-	{
-	    ssize_t w;
+            written = 0;
+            while (written < readed) {
+                ssize_t w;
 
-	    w = s->write(s, buf+written, readed-written);
-	    if (w > 0)
-		written += w;
-	}
+                w = s->write(s, buf+written, readed-written);
+                if (w > 0) {
+                    // Copy the portion written.
+                    // I know, I know, we're not using palloc. It'll be over soon.
+                    char* fragment;
+                    fragment = strndup(buf + written, w); // An '\0' is added.
+                    
+                    if (NULL == cache_hit)
+                        cache_hit = palloc_strdup(s, fragment);
+                    else
+                        psnprintf(cache_hit, s, "%s%s", cache_hit, fragment);
+                    
+                    free(fragment);
+                    
+                    written += w;
+                }
+            }
+        }
+        INFO; printf("writing hit to cache...\n");
+        cache_add(real_path, cache_hit);
     }
     
-    pfree(etag_string);
-    pfree(date_string);
-    pfree(time_repr);
-    pfree(real_path);
-
     close(fd);
 
     return 0;

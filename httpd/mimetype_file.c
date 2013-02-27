@@ -145,8 +145,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     psnprintf(s->response, s, "%s%s", s->response, disk_buf);
     s->done_reading = 1;
     *(s->response + strlen(s->response)) = '\0';
-    DEBUG("Done Reading\n%s\n", s->response);
-    DEBUG("fjkdlajfkdlajfdsk");
+    DEBUG("Done Reading\n%i%s\n", (int) strlen(s->response), s->response);
 
     write:
     DEBUG("STARTING WRITE");

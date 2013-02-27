@@ -70,6 +70,7 @@
 #include <linux/khugepaged.h>
 #include <linux/signalfd.h>
 #include <linux/uprobes.h>
+#include <linux/semaphore.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1596,6 +1597,21 @@ long do_fork(unsigned long clone_flags,
 			trace = 0;
 	}
 
+  if(current->tl_lock != NULL){
+    /*
+     * If tl_lock isn't null then we are restricting the number of threads this
+     * process can start.
+     */
+
+    if(down_trylock(current->tl_lock)){
+      return -EAGAIN;
+    }
+    /*
+     * Increase the running sem.
+     */
+    up(current->tl_running);
+  }
+
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
 			 child_tidptr, NULL, trace);
 	/*
@@ -1617,6 +1633,24 @@ long do_fork(unsigned long clone_flags,
 			init_completion(&vfork);
 			get_task_struct(p);
 		}
+
+    /*
+     * If tl_max > 0 then we limit the number of concurrent threads
+     * and tl_root_pid != pid.  I don't think it is possible to enter here
+     * in such a way that p->tl_root_pid would ever equal p->pid... o well
+     */
+    if(atomic_read(&current->tl_max)){
+      /*
+       * If tl_lock is null then this is the first thread to be limited by the
+       * limiting process; we need to initialize the semaphore.
+       */
+      if(current->tl_lock == NULL){
+        p->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        p->tl_running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        sema_init(p->tl_lock, atomic_read(&p->tl_max));
+        sema_init(p->tl_running, 0);
+      }
+    }
 
 		wake_up_new_task(p);
 

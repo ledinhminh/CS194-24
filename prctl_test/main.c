@@ -12,27 +12,40 @@ int main(int argc, char **argv)
     printf("ERROR: TEST 1 e should be -1, instead e = %d\n", e);
   tests_ran++;
 
-  e = prctl(41, 10);
+  int limit = 2;
+  e = prctl(41, limit);
   if(e != 0)
     printf("ERROR: TEST 1 e should be 0, instead e = %d\n", e);
   tests_ran++;
 
   printf("Ran %d tests\n", tests_ran);
 
-  printf("Difficult to say if the rest pass or fail... Thread limit is 10\n");
+  printf("Difficult to say if the rest pass or fail... Thread limit is %d\n",
+         limit);
   int i = 0;
+  int j = 0;
   int pid = 0;
   int s = 0;
-  for(i = 0; i < 20; ++i){
+  for(i = 0; i < 4; ++i){
     pid = fork();
     s = 2; //(rand() % 2) + 1;
-    if(pid == 0)
+    if(pid == 0){
+      for(j = 0; j < 4; ++j){
+        pid = fork();
+        if(pid == 0){
+          break;
+        }
+        printf("%d,%d.  Hello from pid: %d to child pid: %d\n",
+               i, j, getpid(), pid);
+      }
       break;
+    }
+    printf("%d.  Hello from pid: %d to child pid: %d\n", i, getpid(), pid);
   }
 
   //if(pid == 0) sleep(2);
   sleep(s);
-  printf("Goodbye from pid: %d\n", pid);
+  printf("%d.  Goodbye from pid: %d\n", i, getpid());
 
   return 0;
 }

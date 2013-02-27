@@ -1551,6 +1551,16 @@ struct task_struct {
 #endif
   /* Values for limiting the number of scheduler entities */
 
+  /* We do not want to limit the number of threads the thread that makes
+   * the call to prctl, we only want to limit the number of threads of each
+   * of its children. To do this we keep track of the root pid as tl_root_pid
+   * and if the current thread is not the root then we start a tl_lock on it.
+   * Also if a given thread has a tl_root_pid set and that thread is not the
+   * root, any call to change the thread limit through prctl will return
+   * -EINVAL.
+   */
+  pid_t tl_root_pid;
+
   /* If tl_max == 0 then then threads aren't limited else they are
    * Be sure to use atomic_set(&tl_max,0) or atomic_set(&tl_max,1)
    * for enable/disable.
@@ -1563,6 +1573,13 @@ struct task_struct {
    * If ever after decrementing it reaches tl_max then free data
    */
   struct semaphore* tl_lock;
+
+  /* tl_running will start at 0 and increment for each running thread. If
+     tl_running ever reaches 0 then we need to free the memory associated
+     with tl_lock and tl_running. Use down_trylock() do decrement and if that
+     function return 1 then free tl_lock and tl_running.
+   */
+  struct semaphore* tl_running;
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

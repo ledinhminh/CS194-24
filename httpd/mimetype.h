@@ -13,6 +13,8 @@ struct mimetype
 
 void mimetype_init(struct mimetype *mt);
 
+int write_to_socket(struct http_session *s, int epoll_fd);
+
 struct mimetype *mimetype_new(palloc_env env, const char *path);
 
 #endif

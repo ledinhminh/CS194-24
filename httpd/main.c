@@ -190,6 +190,7 @@ void* start_thread(void *args)
 					    }
 					}
 
+                    DEBUG("session->buf=%p, session->buf_used=%d\n", session->buf, (int) session->buf_used);
 					if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 					{
 						DEBUG("done reading\n");
@@ -262,38 +263,13 @@ void* start_thread(void *args)
 						continue;
 					}
 				}
-				else
-				{
-					//a disk_fd, we should read from disk
-					if (strcasecmp(method, "GET") == 0)
-						mterr = mt->http_get(mt, session, epoll_fd);
-					else
-					{
-						fprintf(stderr, "Unknown method: '%s'\n", method);
-						goto cleanup;
-					}
-
-					if (mterr != 0)
-					{
-						perror("unrecoverable error while processing a client");
-						abort();
-					}
-
-				}
-
-
 
 				cleanup:
-				(void) 5;
-				// close(session->fd);
-				//pfree(session);
-                
-                //DEBUG("finished processing request\n");
-				
-			} //end of else if
-		} //end of epoll event for
-	} //end of while loop
-} //end of thread_start
+                DEBUG("finished processing request\n");
+			}
+		}
+	} 
+} 
 
 int main(int argc, char **argv)
 {

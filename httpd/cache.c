@@ -107,6 +107,7 @@ char* cache_lookup(palloc_env env, const char* request) {
     do {
         if (0 == strcmp(request, entry->request)) {
             entry->used = 1;
+            DEBUG("response %p\n", entry->response);
             return palloc_strdup(env, entry->response);
         }
     } while (NULL != (entry = entry->next));

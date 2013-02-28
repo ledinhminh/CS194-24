@@ -18,9 +18,6 @@
 #define PORT 8088
 #define LINE_MAX 1024
 #define MAX_EVENTS 16
-#define FD_SOCKET 0
-#define FD_READ 1
-#define FD_WRITE 2
 
 #define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT
 
@@ -256,7 +253,7 @@ void* start_thread(void *args)
 						DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
 						struct epoll_event event;
 						event.data.fd = session->fd;
-						event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+						event.events = EPOLL_FLAGS;
 						if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
 						{
 							perror("EPOLL MOD FAIL\n\n");
@@ -337,20 +334,20 @@ int main(int argc, char **argv)
 
 	//Add the listening socket into epoll
 	event.data.fd = socket_fd;
-	event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+	event.events = EPOLL_FLAGS;
 	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event) < 0)
 	{
 		perror("Couldn't add socket to epoll");
 		return -1;
 	}
 
-	//populate the thread arguments
-	//each thread needs information so we pass it to them in a struct
+	// Populate the thread arguments
+	// Each thread needs information so we pass it to them in a struct
 	thread_args.listen_socket_fd = socket_fd;
 	thread_args.thread_env = &env;
 	thread_args.epoll_fd = epoll_fd;
 
-	INFO;printf("\nUSING FD %i", socket_fd);
+	DEBUG("passing listening socket fd=%d to threads\n", socket_fd);
 
 	debug_threaded = 1; //set to 0 if you want to revert to the old server
 	if (debug_threaded){

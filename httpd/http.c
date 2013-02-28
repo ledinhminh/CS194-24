@@ -117,12 +117,14 @@ struct http_session *wait_for_client(struct http_server *serv)
 
   sess->buf = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
   memset(sess->buf, '\0', DEFAULT_BUFFER_SIZE);
+  sess->response = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
+  memset(sess->response, '\0', DEFAULT_BUFFER_SIZE);
   sess->buf_size = DEFAULT_BUFFER_SIZE;
   sess->buf_used = 0;
   sess->disk_fd = 0;
   sess->fd = 0;
-  sess->done_reading = 0;
   sess->done_processing = 0;
+  sess->done_reading = 0;
 
   /* Wait for a client to connect. */
   addr_len = sizeof(addr);

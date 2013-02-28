@@ -117,7 +117,7 @@ void* start_thread(void *args)
                 DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
                 
-                DEBUG("s->buf_size=%d, s->buf_used=%d\n", (int) session->buf_size, (int) session->buf_used);
+                DEBUG("s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
 
 				// Check if session is NULL
 				if (session == NULL)
@@ -223,11 +223,12 @@ void* start_thread(void *args)
 
 							len = strlen(line);
 							fprintf(stderr, "[%04lu] < %s\n", len, line);
+                            DEBUG("line=%p\n", line);
 							headers->header = line;
 							next_header = palloc(session, struct http_header);
 							headers->next = next_header;
 							headers = next_header;
-							next_header->header = NULL;
+                            headers->header = NULL;
 
 							if (len == 0)
 								break;

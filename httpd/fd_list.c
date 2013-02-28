@@ -3,6 +3,7 @@
 #include <pthread.h>
 
 #include "palloc.h"
+#include "debug.h"
 
 struct fd_list
 {
@@ -68,30 +69,26 @@ void fd_list_del(int fd)
 	prev = NULL;
 	next = NULL;
 
-	pthread_mutex_lock(&fd_list_mutex);
+    
 	while(current != NULL) {
 		next = current->next;
-		if (current->fd == fd)
-		{
+		if (current->fd == fd) {
+            DEBUG("obtained fd_list lock\n");
+            pthread_mutex_lock(&fd_list_mutex);
 			if (prev == NULL) {
 				// current is head
-				if (next == NULL)
-					// current is the only one
-					fd_list_head = NULL;
-				else
-					fd_list_head = next;
+                fd_list_head = next;
 			} else {
-				if (next == NULL)
-					prev->next = NULL;
-				else
-					prev->next = next;
+                prev->next = next;
 			}
+           	pthread_mutex_unlock(&fd_list_mutex);
             // We're done, get out.
             current = NULL;
+            DEBUG("released fd_list lock\n");
 		} else {
 			prev = current;
 			current = current->next;
 		}
 	}
-	pthread_mutex_unlock(&fd_list_mutex);
+
 }

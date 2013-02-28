@@ -80,11 +80,14 @@ void cache_add(const char* request, char* response) {
             tail->next = new_entry;
             tail = new_entry;
         }
-
+        DEBUG("tail=%p\n", tail);
+        DEBUG("will strdup request\n");
         tail->request = palloc_strdup(tail, request);
+        DEBUG("will strdup response\n");
         tail->response = palloc_strdup(tail, response);
         tail->next = NULL;
         pthread_mutex_unlock(&lock);
+        DEBUG("mutex unlocked\n");
     }
 }
 

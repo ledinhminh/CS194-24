@@ -142,15 +142,16 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     ssize_t disk_buf_size = BUF_COUNT;
     ssize_t disk_buf_used = 0;
     disk_buf = palloc_array(s, char, disk_buf_size);
-    
-    while ((readed = read(s->disk_fd, disk_buf, BUF_COUNT - disk_buf_used)) > 0)
+    DEBUG("disk_buf_used=%d, disk_buf_size=%d\n", (int) disk_buf_used, (int) disk_buf_size);
+    while ((readed = read(s->disk_fd, disk_buf, disk_buf_size - disk_buf_used)) > 0)
     {
-        DEBUG("read %d bytes from file\n", (int) readed);
         disk_buf_used += readed;
+        DEBUG("read %d bytes from file; disk_buf_used=%d, disk_buf_size=%d\n", (int) readed, (int) disk_buf_used, (int) disk_buf_size);
 
-        if (disk_buf_used + 3 >= BUF_COUNT)
+        if (disk_buf_used + 3 >= disk_buf_size)
         {
             disk_buf_size *= 2;
+            DEBUG("reallocing to %d bytes\n", (int) disk_buf_size);
             disk_buf = prealloc(s, disk_buf_size);
         }
     }

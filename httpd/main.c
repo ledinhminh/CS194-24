@@ -325,7 +325,7 @@ int main(int argc, char **argv)
 	}
 
 	//Create a new epoll structure
-	DEBUG("Creating new EPOLL\n");
+	DEBUG("creating new epoll instance\n");
 	epoll_fd = epoll_create1(0);
 	if(epoll_fd < 0)
 	{

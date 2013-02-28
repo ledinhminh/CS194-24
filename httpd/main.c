@@ -14,6 +14,7 @@
 #include "palloc.h"
 #include "debug.h"
 #include "fd_list.h"
+#include "cache.h"
 
 #define PORT 8088
 #define LINE_MAX 1024
@@ -305,6 +306,7 @@ int main(int argc, char **argv)
 	struct epoll_event event;
 
 	env = palloc_init("httpd root context");
+    cache_init(env);
 
 	proc_num = sysconf( _SC_NPROCESSORS_ONLN );
 

@@ -4,6 +4,7 @@
 #include "mimetype_file.h"
 #include "debug.h"
 #include "fd_list.h"
+#include "cache.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -38,19 +39,32 @@ struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath)
 
 int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 {
+    // We might have been interrupted by EAGAIN. Skip back to where we were if that's the case
     if (s->done_reading)
         goto write;
     if (s->done_processing)
         goto read;
 
-
     struct mimetype_file *mtf;
     int fd;
-    ssize_t readed;
+
+    mtf = palloc_cast(mt, struct mimetype_file);
+    if (mtf == NULL)
+	return -1;
+    
+    // Remove query strings and store them elsewhere.
     char* query_string;
     char* real_path;
     int real_path_len; 
+    query_string = strstr(mtf->fullpath, "?");
+    real_path_len = NULL != query_string ? query_string - mtf->fullpath : strlen(mtf->fullpath);
+    real_path = palloc_array(s, char, real_path_len + 1);
+    strncpy(real_path, mtf->fullpath, real_path_len);
+    *(real_path + real_path_len) = '\0';
+    DEBUG("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);    
+    DEBUG("query string: %s\n", query_string);
     
+    // Set up the string for ETag and Date.
     struct stat file_info;
     struct tm* timeinfo;
     char* time_repr;
@@ -58,23 +72,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     char* date_string;
     char strftime_buffer[1024];
     struct http_header* next_header;
-    int etag_matches = -1;
-
-    mtf = palloc_cast(mt, struct mimetype_file);
-    if (mtf == NULL)
-	return -1;
-    
-    // Attempt to deal with query strings.
-    // We can improve this later...
-    query_string = strstr(mtf->fullpath, "?");
-    real_path_len = NULL != query_string ? query_string - mtf->fullpath : strlen(mtf->fullpath);
-    real_path = palloc_array(s, char, real_path_len + 1);
-    strncpy(real_path, mtf->fullpath, real_path_len);
-    *(real_path + real_path_len) = '\0';
-    INFO; printf("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);    
-    INFO; printf("query string: %s\n", query_string);
-    
-    // We'll just use the st_mtime for ETag.
+    int etag_matches = -1; // strcmp returns 0 on equality
     stat(real_path, &file_info);
     timeinfo = gmtime(&file_info.st_mtime);
     psnprintf(time_repr, s, "\"%d\"", (int) file_info.st_mtime);
@@ -116,45 +114,64 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     s->done_processing = 1;
     DEBUG("done processing, headers=(%d bytes)\n", (int) strlen(s->response));
     
+    // But can we serve from cache?
+    char* cache_hit;
+    cache_hit = cache_lookup(s, real_path);
+    
+    if (NULL != cache_hit) {
+        DEBUG("serving request from cache\n");
+        char* temp;
+        psnprintf(temp, s, "%s%s", s->response, cache_hit);
+        s->response = temp;
+        goto write;
+    } else {
+        DEBUG("request not in cache, serving normally\n");
+    }
+    
     fd = open(real_path, O_RDONLY);
     if (fd < 0)
-    {
         DEBUG("failed to open file: %s\n", strerror(errno));
-    }
     s->disk_fd = fd;
     DEBUG("disk_fd=%i\n", s->disk_fd);
 
     read:
     DEBUG("will read from file\n");
-    char *disk_buf;
-    size_t disk_buf_size, disk_buf_used;
-    disk_buf_used = 0;
-    while ((readed = read(s->disk_fd, disk_buf, disk_buf_size - disk_buf_used)) > 0)
+    char* disk_buf;
+    ssize_t readed;
+    
+    ssize_t disk_buf_size = BUF_COUNT;
+    ssize_t disk_buf_used = 0;
+    disk_buf = palloc_array(s, char, disk_buf_size);
+    
+    while ((readed = read(s->disk_fd, disk_buf, BUF_COUNT - disk_buf_used)) > 0)
     {
         DEBUG("read %d bytes from file\n", (int) readed);
         disk_buf_used += readed;
 
-        if (disk_buf_used + 3 >= disk_buf_size)
+        if (disk_buf_used + 3 >= BUF_COUNT)
         {
             disk_buf_size *= 2;
             disk_buf = prealloc(s, disk_buf_size);
         }
     }
-    DEBUG("BEFORE READ APPEND RESPONSE\n%s\n", s->response);
     *(disk_buf + disk_buf_used) = '\0';
-    // No, don't ask me why this doens't print.
-    DEBUG("BEFORE READ APPEND BUF\n%s\n", s->buf);
-    // I have no idea if it's even safe to write into the same thing you're reading from.
+
+    // We have the entire string. Time to write it to cache.
+    cache_add(real_path, disk_buf);
+
+    // It's probably not safe to write into the string we're reading from...
     char* temp;
     psnprintf(temp, s, "%s%s ", s->response, disk_buf);
     s->response = temp;
+    
     s->done_reading = 1;
+    // Is this safe?
     *(s->response + strlen(s->response)) = '\0';
-    DEBUG("done reading %d bytes: %s\n", (int) strlen(s->response), s->response);
+    DEBUG("done reading %d bytes into buffer: %s\n", (int) strlen(s->response), s->response);
 
     write:
     DEBUG("will write to net\n");
-    size_t written;
+    ssize_t written;
     int response_length;
  
     written = 0;
@@ -177,13 +194,9 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         }
     }
     else if(written == 0)
-    {
         close(s->fd);
-    }
     else
-    {
         DEBUG("error writing to socket: %s\n", strerror(errno));
-    }
     
     fd_list_del(s->fd);
 

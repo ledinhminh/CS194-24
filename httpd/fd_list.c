@@ -3,7 +3,6 @@
 #include <pthread.h>
 
 #include "palloc.h"
-#include "debug.h"
 
 struct fd_list
 {
@@ -17,7 +16,6 @@ pthread_mutex_t fd_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void fd_list_add(palloc_env* env, int fd, struct http_session* session)
 {
-    DEBUG("init\n");
 	struct fd_list* to_add;
 	struct fd_list* current;
 
@@ -26,9 +24,7 @@ void fd_list_add(palloc_env* env, int fd, struct http_session* session)
 	to_add->session = session;
 	to_add->next = NULL;
 
-    DEBUG("acquiring fd_list lock\n");
 	pthread_mutex_lock(&fd_list_mutex);
-    DEBUG("acquired lock\n");
 	if (fd_list_head == NULL)
 	{
 		fd_list_head = to_add;
@@ -43,7 +39,6 @@ void fd_list_add(palloc_env* env, int fd, struct http_session* session)
 		current->next = to_add;
 	}
 	pthread_mutex_unlock(&fd_list_mutex);
-    DEBUG("released lock\n");
 }
 
 struct http_session* fd_list_find(int fd)
@@ -65,7 +60,6 @@ struct http_session* fd_list_find(int fd)
 
 void fd_list_del(int fd)
 {
-    DEBUG("looking for fd=%d\n", fd);
 	struct fd_list* current;
 	struct fd_list* prev;
 	struct fd_list* next;
@@ -74,11 +68,8 @@ void fd_list_del(int fd)
 	prev = NULL;
 	next = NULL;
 
-    DEBUG("acquiring fd_list lock\n");
 	pthread_mutex_lock(&fd_list_mutex);
-    DEBUG("acquired lock\n");
 	while(current != NULL) {
-        DEBUG("current=%p, fd=%d\n", current, current->fd);
 		next = current->next;
 		if (current->fd == fd)
 		{
@@ -103,5 +94,4 @@ void fd_list_del(int fd)
 		}
 	}
 	pthread_mutex_unlock(&fd_list_mutex);
-    DEBUG("released lock\n");
 }

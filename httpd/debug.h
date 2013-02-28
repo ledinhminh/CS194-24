@@ -5,7 +5,8 @@
 
 #include <pthread.h>
 
-static pthread_mutex_t __stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
+// There is a possibility it won't be used
+static pthread_mutex_t __attribute__((unused)) __stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Prepend this to get some debugging information. */
 #define INFO pthread_mutex_lock(&__stdout_mutex); printf("[%x] %s:%d(%s): ", (unsigned int) pthread_self(), __FILE__, __LINE__, __func__); pthread_mutex_unlock(&__stdout_mutex);

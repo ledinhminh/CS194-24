@@ -10,8 +10,9 @@
 
 #define CACHE_SIZE 512
 
-// Shitty second-chance algorithm.
-// This is not thread-safe. At all. In fact, it's not safe for anything.
+// Cache with second-chance replacement algorithm.
+// Yes, I know it's backed by a linked list.
+// Protected by a list-global lock. Enjoy that.
 
 palloc_env* envp;
 int num_entries;

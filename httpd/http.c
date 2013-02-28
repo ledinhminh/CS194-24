@@ -23,6 +23,7 @@
 #include "http.h"
 #include "lambda.h"
 #include "palloc.h"
+#include "debug.h"
 
 #define DEFAULT_BUFFER_SIZE 256
 
@@ -81,7 +82,7 @@ int listen_on_port(short port)
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(port);
 
-  fprintf(stderr, "Binding on port %i\n", port);
+  DEBUG("binding to port %d\n", port);
   if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0)
   {
     perror("Unable to bind to HTTP port");
@@ -89,7 +90,7 @@ int listen_on_port(short port)
     return -1;
   }
 
-  fprintf(stderr, "Listening on Socket\n");
+  DEBUG("now listening\n");
   if (listen(fd, MAX_PENDING_CONNECTIONS) < 0)
   {
     perror("Unable to listen on HTTP port");
@@ -124,8 +125,7 @@ struct http_session *wait_for_client(struct http_server *serv)
   sess->fd = accept(serv->fd, (struct sockaddr *)&addr, &addr_len);
   if (sess->fd < 0)
   {
-    fprintf(stderr, "ACCEPT ERRNO %i, %s\n", errno, strerror(errno));
-    perror("Unable to accept on client socket");
+    DEBUG("unable to accept: %s\n", strerror(errno));
     pfree(sess);
     return NULL;
   }
@@ -148,10 +148,10 @@ int close_session(struct http_session *s)
 
 const char *http_gets(struct http_session *s)
 {
-  // while (true)
-  // {
+  while (true)
+  {
     char *newline;
-    // ssize_t readed;
+    ssize_t readed;
 
     if ((newline = strstr(s->buf, "\r\n")) != NULL)
     {
@@ -169,16 +169,16 @@ const char *http_gets(struct http_session *s)
       return new;
     }
 
-    // readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
-    // if (readed > 0)
-    //   s->buf_used += readed;
+    readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
+    if (readed > 0)
+      s->buf_used += readed;
 
-    // if (s->buf_used >= s->buf_size)
-    // {
-    //   s->buf_size *= 2;
-    //   s->buf = prealloc(s->buf, s->buf_size);
-    // }
-  // }
+    if (s->buf_used >= s->buf_size)
+    {
+      s->buf_size *= 2;
+      s->buf = prealloc(s->buf, s->buf_size);
+    }
+  }
 
   return NULL;
 }

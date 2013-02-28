@@ -95,43 +95,43 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         }
     } while (NULL != (next_header = next_header->next));
     
-    char* response;
     // ETag matched in header processing. Issue a 304 and return
     if (0 == etag_matches) {
         DEBUG("ETag matched, retuning 304\n");
-        psnprintf(response, s, "%s%s%s%s",
+        psnprintf(s->response, s, "%s%s%s%s",
             "HTTP/1.1 304 Not Modified\r\n",
             etag_string,
             date_string,
             "\r\n");
+        // No reading!
+        goto write;
     } else {
-        psnprintf(response, s, "%s%s%s%s%s",
+        psnprintf(s->response, s, "%s%s%s%s%s",
             "HTTP/1.1 200 OK\r\n",
             "Content-Type: text/html\r\n",
             "Cache-Control: max-age=365, public\r\n",
             etag_string,
             "\r\n");
     }
-    s->response = response;
     s->done_processing = 1;
-    DEBUG("Done Processing, %s\n", s->response);
+    DEBUG("done processing, headers=(%d bytes)\n", (int) strlen(s->response));
     
     fd = open(real_path, O_RDONLY);
     if (fd < 0)
     {
-        perror("DISK FD is bad");
+        DEBUG("failed to open file: %s\n", strerror(errno));
     }
     s->disk_fd = fd;
-    DEBUG("DISK FD %i", s->disk_fd);
+    DEBUG("disk_fd=%i\n", s->disk_fd);
 
     read:
-    DEBUG("READ FROM DISK");
+    DEBUG("will read from file\n");
     char *disk_buf;
     size_t disk_buf_size, disk_buf_used;
     disk_buf_used = 0;
     while ((readed = read(s->disk_fd, disk_buf, disk_buf_size - disk_buf_used)) > 0)
     {
-        DEBUG("Read Some from file\n");
+        DEBUG("read %d bytes from file\n", (int) readed);
         disk_buf_used += readed;
 
         if (disk_buf_used + 3 >= disk_buf_size)
@@ -143,32 +143,36 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     DEBUG("BEFORE READ APPEND RESPONSE\n%s\n", s->response);
     DEBUG("BEFORE READ APPEND BUF\n%s\n", s->buf);
     *(disk_buf + disk_buf_used) = '\0';
-    psnprintf(s->response, s, "%s%s", s->response, disk_buf);
+    // I have no idea if it's even safe to write into the same thing you're reading from.
+    char* temp;
+    psnprintf(temp, s, "%s%s ", s->response, disk_buf);
+    s->response = temp;
     s->done_reading = 1;
     *(s->response + strlen(s->response)) = '\0';
     DEBUG("Done Reading\n%i%s\n", (int) strlen(s->response), s->response);
 
     write:
-    DEBUG("STARTING WRITE");
+    DEBUG("will write to net\n");
     size_t written;
     int response_length;
  
     written = 0;
     response_length = strlen(s->response);
-    DEBUG("Writing...%i", response_length); 
+    DEBUG("writing %d bytes\n", response_length); 
     while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)
     {
         s->buf_used += written;
-        DEBUG("write some...");
+        DEBUG("wrote %d bytes\n", (int) written);
     }
     if (written == -1 && errno == EAGAIN)
     {
+        DEBUG("got EAGAIN, rearming...\n");
         struct epoll_event event;
         event.data.fd = s->fd;
         event.events = EPOLLOUT | EPOLLET | EPOLLONESHOT;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, s->fd, &event) < 0)
         {
-            perror("Couldn't arm socked fd to epoll");
+            DEBUG("couldn't arm socket fd to epoll: %s\n", strerror(errno));
         }
     }
     else if(written == 0)
@@ -177,7 +181,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     }
     else
     {
-        perror("Writing to Socket error");
+        DEBUG("error writing to socket: %s\n", strerror(errno));
     }
     
     fd_list_del(s->fd);

@@ -173,66 +173,105 @@ void* start_thread(void *args)
 				if (events[index].data.fd == session->fd)
 				{
 					DEBUG("handling network fd\n");
-					//a socket fd, we should read from it
-					ssize_t readed;
-					while (
-						(readed = read(session->fd, session->buf + session->buf_used, 
-							session->buf_size - session->buf_used)) > 0)
-					{		
-						DEBUG("read %d bytes, buf=(%d bytes)\n", (int) readed, (int) strlen(session->buf));
-					    if (readed > 0)
-					      session->buf_used += readed;
 
-					    if (session->buf_used >= session->buf_size)
-					    {
-					      session->buf_size *= 2;
-					      session->buf = prealloc(session->buf, session->buf_size);
-					    }
-					}
-
-                    DEBUG("session->buf=%p, session->buf_used=%d\n", session->buf, (int) session->buf_used);
-					if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
+					//a socket fd, we should read from it if we have to
+					ssize_t readed = 0;
+					if (session->done_req_read == 0)
 					{
-						DEBUG("done reading\n");
-						//start processing request
-						line = session->gets(session);
-						if (line == NULL)
+						while (
+							(readed = read(session->fd, session->buf + session->buf_used, 
+								session->buf_size - session->buf_used)) > 0)
+						{		
+							DEBUG("read %d bytes, buf=(%d bytes)\n", (int) readed, (int) strlen(session->buf));
+						    if (readed > 0)
+						      session->buf_used += readed;
+
+						    if (session->buf_used >= session->buf_size)
+						    {
+						      session->buf_size *= 2;
+						      session->buf = prealloc(session->buf, session->buf_size);
+						    }
+						}				
+						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 						{
-							fprintf(stderr, "Client connected, but no lines could be read\n");
-							goto cleanup;
-						}
+							DEBUG("done reading\n");
+							//start processing request
+							line = session->gets(session);
+							if (line == NULL)
+							{
+								fprintf(stderr, "Client connected, but no lines could be read\n");
+								goto cleanup;
+							}
 
-						method = palloc_array(session, char, strlen(line));
-						file = palloc_array(session, char, strlen(line));
-						version = palloc_array(session, char, strlen(line));
-						if (sscanf(line, "%s %s %s", method, file, version) != 3)
+							method = palloc_array(session, char, strlen(line));
+							file = palloc_array(session, char, strlen(line));
+							version = palloc_array(session, char, strlen(line));
+							if (sscanf(line, "%s %s %s", method, file, version) != 3)
+							{
+								fprintf(stderr, "Improper HTTP request\n");
+								goto cleanup;
+							}
+
+							fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
+								method, file, version);
+
+							headers = palloc(session, struct http_header);
+							DEBUG("new http_headers at %p\n", headers);
+							session->headers = headers;
+
+							while ((line = session->gets(session)) != NULL)
+							{
+								size_t len;
+
+								len = strlen(line);
+								fprintf(stderr, "[%04lu] < %s\n", len, line);
+								headers->header = line;
+								next_header = palloc(session, struct http_header);
+								headers->next = next_header;
+								headers = next_header;
+	                            headers->header = NULL;
+
+								if (len == 0)
+									break;
+							}
+							mt = mimetype_new(session, file);
+							if (strcasecmp(method, "GET") == 0)
+								mterr = mt->http_get(mt, session, epoll_fd);
+							else
+							{
+								fprintf(stderr, "Unknown method: '%s'\n", method);
+								goto cleanup;
+							}
+
+							if (mterr != 0)
+							{
+								perror("unrecoverable error while processing a client");
+								abort();
+							}
+						}
+						else if (readed == -1 && errno == EAGAIN)
 						{
-							fprintf(stderr, "Improper HTTP request\n");
-							goto cleanup;
+							//We got an EGAIN from reading from socket into buffer
+							//We need to rearm
+							DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
+							struct epoll_event event;
+							event.data.fd = session->fd;
+							event.events = EPOLL_FLAGS;
+							if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
+							{
+								perror("EPOLL MOD FAIL\n\n");
+							}
+							continue;
 						}
-
-						fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-							method, file, version);
-
-						headers = palloc(session, struct http_header);
-						DEBUG("new http_headers at %p\n", headers);
-						session->headers = headers;
-
-						while ((line = session->gets(session)) != NULL)
+						else
 						{
-							size_t len;
-
-							len = strlen(line);
-							fprintf(stderr, "[%04lu] < %s\n", len, line);
-							headers->header = line;
-							next_header = palloc(session, struct http_header);
-							headers->next = next_header;
-							headers = next_header;
-                            headers->header = NULL;
-
-							if (len == 0)
-								break;
+							//finished reading request
+							session->done_req_read = 1;
 						}
+					}
+					else
+					{
+						//we've already finished reading off the socket
 						mt = mimetype_new(session, file);
 						if (strcasecmp(method, "GET") == 0)
 							mterr = mt->http_get(mt, session, epoll_fd);
@@ -248,20 +287,7 @@ void* start_thread(void *args)
 							abort();
 						}
 					}
-					else if (readed == -1 && errno == EAGAIN)
-					{
-						//We got an EGAIN from reading from socket into buffer
-						//We need to rearm
-						DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
-						struct epoll_event event;
-						event.data.fd = session->fd;
-						event.events = EPOLL_FLAGS;
-						if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
-						{
-							perror("EPOLL MOD FAIL\n\n");
-						}
-						continue;
-					}
+
 				}
 
 				cleanup:

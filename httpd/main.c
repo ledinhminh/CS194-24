@@ -227,6 +227,7 @@ void* start_thread(void *args)
 							next_header = palloc(session, struct http_header);
 							headers->next = next_header;
 							headers = next_header;
+							next_header->header = NULL;
 
 							if (len == 0)
 								break;

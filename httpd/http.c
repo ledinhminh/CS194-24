@@ -119,6 +119,10 @@ struct http_session *wait_for_client(struct http_server *serv)
   memset(sess->buf, '\0', DEFAULT_BUFFER_SIZE);
   sess->buf_size = DEFAULT_BUFFER_SIZE;
   sess->buf_used = 0;
+  sess->disk_fd = 0;
+  sess->fd = 0;
+  sess->done_reading = 0;
+  sess->done_processing = 0;
 
   /* Wait for a client to connect. */
   addr_len = sizeof(addr);
@@ -151,7 +155,7 @@ const char *http_gets(struct http_session *s)
   while (true)
   {
     char *newline;
-    ssize_t readed;
+    // ssize_t readed;
 
     if ((newline = strstr(s->buf, "\r\n")) != NULL)
     {
@@ -169,15 +173,15 @@ const char *http_gets(struct http_session *s)
       return new;
     }
 
-    readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
-    if (readed > 0)
-      s->buf_used += readed;
+    // readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
+    // if (readed > 0)
+    //   s->buf_used += readed;
 
-    if (s->buf_used >= s->buf_size)
-    {
-      s->buf_size *= 2;
-      s->buf = prealloc(s->buf, s->buf_size);
-    }
+    // if (s->buf_used >= s->buf_size)
+    // {
+    //   s->buf_size *= 2;
+    //   s->buf = prealloc(s->buf, s->buf_size);
+    // }
   }
 
   return NULL;

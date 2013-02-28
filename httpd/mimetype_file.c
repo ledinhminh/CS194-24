@@ -204,13 +204,11 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     }
     else if(written == 0) {
         DEBUG("done writing, closing socket\n");
+        fd_list_del(s->fd);
         close(s->fd);
     }
     else {
         DEBUG("error writing to socket: %s\n", strerror(errno));
     }
-    
-    fd_list_del(s->fd);
-
     return 0;
 }

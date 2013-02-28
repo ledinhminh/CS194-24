@@ -98,7 +98,7 @@ void* start_thread(void *args)
 		int num_active_epoll, index;
 
 		num_active_epoll = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-		if (num_active_epoll < 0) {
+		if (num_active_epoll < 0 && errno != EINTR) {
             DEBUG("epoll_wait failure: %s\n", strerror(errno));
 			exit(1);
 		}
@@ -109,7 +109,6 @@ void* start_thread(void *args)
 				// Something happened, the socket closed so we should close
 				// it on our side
                 DEBUG("epoll error\n");
-				// TODO: remove fd from structure
 				close(events[index].data.fd);
 				continue;
 			}
@@ -120,7 +119,7 @@ void* start_thread(void *args)
                 
                 DEBUG("s->buf_size=%d, s->buf_used=%d\n", (int) session->buf_size, (int) session->buf_used);
 
-				//check if session is NULL
+				// Check if session is NULL
 				if (session == NULL)
 				{
 					fprintf(stderr, "server->wait_for_client() returned NULL...\n");

@@ -40,10 +40,14 @@ struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath)
 int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 {
     // We might have been interrupted by EAGAIN. Skip back to where we were if that's the case
-    if (s->done_reading)
+    if (s->done_reading) {
+        DEBUG("done_reading set, going to write\n");
         goto write;
-    if (s->done_processing)
+    }
+    if (s->done_processing) {
+        DEBUG("done_processing set, going to read\n"); 
         goto read;
+    }
 
     struct mimetype_file *mtf;
     int fd;
@@ -152,7 +156,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         {
             disk_buf_size *= 2;
             DEBUG("reallocing to %d bytes\n", (int) disk_buf_size);
-            disk_buf = prealloc(s, disk_buf_size);
+            disk_buf = prealloc(disk_buf, disk_buf_size);
         }
     }
     *(disk_buf + disk_buf_used) = '\0';
@@ -168,7 +172,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     s->done_reading = 1;
     // Is this safe?
     *(s->response + strlen(s->response)) = '\0';
-    DEBUG("done reading %d bytes into buffer: %s\n", (int) strlen(s->response), s->response);
+    DEBUG("done reading %d bytes into buffer\n", (int) strlen(s->response));
 
     write:
     DEBUG("will write to net\n");
@@ -176,6 +180,10 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     int response_length;
  
     written = 0;
+    if (NULL == s->response) {
+        DEBUG("s->response is null...\n");
+    }
+    
     response_length = strlen(s->response);
     DEBUG("writing %d bytes\n", response_length); 
     while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)
@@ -194,10 +202,13 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
             DEBUG("couldn't arm socket fd to epoll: %s\n", strerror(errno));
         }
     }
-    else if(written == 0)
+    else if(written == 0) {
+        DEBUG("done writing, closing socket\n");
         close(s->fd);
-    else
+    }
+    else {
         DEBUG("error writing to socket: %s\n", strerror(errno));
+    }
     
     fd_list_del(s->fd);
 

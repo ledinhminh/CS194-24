@@ -20,7 +20,7 @@
 #define LINE_MAX 1024
 #define MAX_EVENTS 16
 
-#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP
 
 struct server_thread_args
 {
@@ -104,11 +104,12 @@ void* start_thread(void *args)
 		}
 		for (index = 0; index < num_active_epoll; index++)
 		{
-			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLHUP))
+			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLRDHUP))
 			{
 				// Something happened, the socket closed so we should close
 				// it on our side
                 DEBUG("epoll error\n");
+				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
 				continue;
 			}

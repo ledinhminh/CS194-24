@@ -299,15 +299,14 @@ int main(int argc, char **argv)
 	palloc_env env;
 
     struct server_thread_args thread_args;
-	int debug_threaded;
 	int socket_fd;
 	int epoll_fd;
+	int proc_num;
 	struct epoll_event event;
 
-	pthread_t thread1;
-	pthread_t thread2;
-
 	env = palloc_init("httpd root context");
+
+	proc_num = sysconf( _SC_NPROCESSORS_ONLN );
 
 	//Create a listening sockent and listen on it
 	socket_fd = listen_on_port(PORT);
@@ -349,18 +348,19 @@ int main(int argc, char **argv)
 
 	DEBUG("passing listening socket fd=%d to threads\n", socket_fd);
 
-	debug_threaded = 1; //set to 0 if you want to revert to the old server
-	if (debug_threaded){
-		pthread_create(&thread1, NULL, start_thread, (void*) &thread_args);
-		pthread_create(&thread2, NULL, start_thread, (void*) &thread_args);
+	//create array of pthreads
+	pthread_t *threads;
+	int i;
+	threads = palloc_array(env, pthread_t, proc_num);
+	for (i = 0; i < proc_num; i++){
+		pthread_t thread;
+		pthread_create(&thread, NULL, start_thread, (void*) &thread_args);
+		threads[i] = thread;
 	}
-	else
-	{
 
+	for (i = 0; i < proc_num; i++){
+		pthread_join(threads[i], NULL);
 	}
-
-  pthread_join( thread1, NULL);
-  pthread_join( thread2, NULL);
 
 	return 0;
 }

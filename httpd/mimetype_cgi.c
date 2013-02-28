@@ -2,6 +2,7 @@
 
 #include "mimetype_cgi.h"
 #include "debug.h"
+#include "fd_list.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -132,7 +133,9 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 	
 	pfree(real_path);
 
+	fd_list_del(s->fd);
 	close(s->fd);
+
 
 	return 0;
 }

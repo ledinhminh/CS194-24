@@ -223,7 +223,6 @@ void* start_thread(void *args)
 
 							len = strlen(line);
 							fprintf(stderr, "[%04lu] < %s\n", len, line);
-                            DEBUG("line=%p\n", line);
 							headers->header = line;
 							next_header = palloc(session, struct http_header);
 							headers->next = next_header;

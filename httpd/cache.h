@@ -19,5 +19,6 @@ void cache_init(palloc_env env);
 void cache_add(const char* request, char* response);
 void cache_print(void);
 char* cache_lookup(palloc_env env, const char* request);
+void cache_delete(const char* request);
 
 #endif

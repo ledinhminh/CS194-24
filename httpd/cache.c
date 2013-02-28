@@ -36,7 +36,6 @@ void cache_add(const char* request, char* response) {
     
     // We get called even if errno ENOENT up the anus.
     if (NULL == response) {
-        DEBUG("NULL response. what were you thinking?\n");
         return;
     }
     
@@ -45,7 +44,7 @@ void cache_add(const char* request, char* response) {
     pthread_mutex_lock(&lock);
     
     if (CACHE_SIZE == num_entries) { // Time to shuffle.
-        INFO; printf("cache is full\n");
+        DEBUG("cache is full\n");
         // Is the page used?
         if (1 == cache->used) { // Used, move to tail
             DEBUG("first entry (%s) used, moving\n", cache->request);
@@ -80,14 +79,10 @@ void cache_add(const char* request, char* response) {
             tail->next = new_entry;
             tail = new_entry;
         }
-        DEBUG("tail=%p\n", tail);
-        DEBUG("will strdup request\n");
         tail->request = palloc_strdup(tail, request);
-        DEBUG("will strdup response\n");
         tail->response = palloc_strdup(tail, response);
         tail->next = NULL;
         pthread_mutex_unlock(&lock);
-        DEBUG("mutex unlocked\n");
     }
 }
 
@@ -116,4 +111,36 @@ char* cache_lookup(palloc_env env, const char* request) {
         }
     } while (NULL != (entry = entry->next));
     return NULL;
+}
+
+void cache_delete (const char* request) {
+    DEBUG("request=%s\n", request);
+	struct cache_entry* current = cache;
+	struct cache_entry* prev = NULL;
+	struct cache_entry* next = NULL;
+
+	while(current != NULL) {
+		next = current->next;
+		if (0 == strcmp(current->request, request)) {
+            pthread_mutex_lock(&lock);
+			if (NULL == prev) {
+                if (NULL == next) {
+                    cache = palloc(*envp, struct cache_entry);
+                    memset(cache, 0, sizeof(struct cache_entry));
+                } else {
+                    cache = next;
+                }
+			} else {
+                prev->next = next;
+			}
+           	pthread_mutex_unlock(&lock);
+            pfree(current);
+            // We're done, get out.
+            current = NULL;
+            num_entries--;
+		} else {
+			prev = current;
+			current = current->next;
+		}
+	}
 }

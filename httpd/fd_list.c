@@ -90,5 +90,4 @@ void fd_list_del(int fd)
 			current = current->next;
 		}
 	}
-
 }

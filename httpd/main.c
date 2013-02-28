@@ -128,6 +128,7 @@ void* start_thread(void *args)
 					fprintf(stderr, "server->wait_for_client() returned NULL...\n");
 					goto rearm;
 				}
+                DEBUG("session not null\n");
 
 				// Try to make accepting socket non-blocking
 				if (make_socket_non_blocking(session->fd) < 0)
@@ -135,9 +136,11 @@ void* start_thread(void *args)
                     DEBUG("failed to set non-blocking\n");
 					goto rearm;
 				}
+                DEBUG("socket non-blocking set\n");
 
 				// Add session to fd_list
 				fd_list_add(env, session->fd, session);
+                DEBUG("added to fd_list\n");
 
 				// Add the accepted socket into epoll
 				struct epoll_event sess_event;
@@ -147,6 +150,7 @@ void* start_thread(void *args)
                     DEBUG("couldn't add socket to epoll: %s\n", strerror(errno));
 					goto rearm;
 				}
+                DEBUG("added session socket fd=%d to epoll\n", session->fd);
 
 				rearm:
 				// Rearm the socket

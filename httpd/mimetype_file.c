@@ -141,15 +141,16 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         }
     }
     DEBUG("BEFORE READ APPEND RESPONSE\n%s\n", s->response);
-    DEBUG("BEFORE READ APPEND BUF\n%s\n", s->buf);
     *(disk_buf + disk_buf_used) = '\0';
+    // No, don't ask me why this doens't print.
+    DEBUG("BEFORE READ APPEND BUF\n%s\n", s->buf);
     // I have no idea if it's even safe to write into the same thing you're reading from.
     char* temp;
     psnprintf(temp, s, "%s%s ", s->response, disk_buf);
     s->response = temp;
     s->done_reading = 1;
     *(s->response + strlen(s->response)) = '\0';
-    DEBUG("Done Reading\n%i%s\n", (int) strlen(s->response), s->response);
+    DEBUG("done reading %d bytes: %s\n", (int) strlen(s->response), s->response);
 
     write:
     DEBUG("will write to net\n");

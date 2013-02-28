@@ -98,7 +98,7 @@ void fd_list_del(int fd)
 					prev->next = next;
 				}
 			}
-			pfree(current);
+			// pfree(current);
 		}
 		else
 		{

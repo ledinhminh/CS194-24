@@ -3,6 +3,7 @@
 #include "palloc.h"
 #include "mimetype_file.h"
 #include "debug.h"
+#include "fd_list.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -57,7 +58,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     char* date_string;
     char strftime_buffer[1024];
     struct http_header* next_header;
-    int etag_matches;
+    int etag_matches = -1;
 
     mtf = palloc_cast(mt, struct mimetype_file);
     if (mtf == NULL)
@@ -178,6 +179,8 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     {
         perror("Writing to Socket error");
     }
+    
+    fd_list_del(s->fd);
 
     return 0;
 }

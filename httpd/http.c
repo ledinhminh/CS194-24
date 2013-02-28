@@ -125,6 +125,7 @@ struct http_session *wait_for_client(struct http_server *serv)
   sess->fd = 0;
   sess->done_processing = 0;
   sess->done_reading = 0;
+  sess->done_req_read = 0;
 
   /* Wait for a client to connect. */
   addr_len = sizeof(addr);

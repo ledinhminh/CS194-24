@@ -26,7 +26,7 @@ void cache_init(palloc_env env) {
     memset(cache, 0, sizeof(struct cache_entry));
     tail = cache;
     
-    INFO; printf("CACHE_SIZE=%d, envp=%p, cache=%p\n", CACHE_SIZE, envp, cache);
+    DEBUG("CACHE_SIZE=%d, envp=%p, cache=%p\n", CACHE_SIZE, envp, cache);
 }
 
 /* String will be duplicated. Caller is responsible for deallocating the passed-in string */
@@ -35,11 +35,11 @@ void cache_add(const char* request, char* response) {
     
     // We get called even if errno ENOENT up the anus.
     if (NULL == response) {
-        INFO; printf("NULL response. what were you thinking?\n");
+        DEBUG("NULL response. what were you thinking?\n");
         return;
     }
     
-    INFO; printf("num_entries=%d, cache=%p, tail=%p\n", num_entries, cache, tail);
+    DEBUG("num_entries=%d, cache=%p, tail=%p\n", num_entries, cache, tail);
     
     pthread_mutex_lock(&lock);
     
@@ -47,7 +47,7 @@ void cache_add(const char* request, char* response) {
         INFO; printf("cache is full\n");
         // Is the page used?
         if (1 == cache->used) { // Used, move to tail
-            INFO; printf("first entry (%s) used, moving\n", cache->request);
+            DEBUG("first entry (%s) used, moving\n", cache->request);
             struct cache_entry* temp;
             tail->next = cache;
             temp = cache->next; // The new cache
@@ -58,7 +58,7 @@ void cache_add(const char* request, char* response) {
             pthread_mutex_unlock(&lock);
         } else { // Not used, free entry and add new entry
             // This sounds inefficient but palloc hands us the chunk of memory right back
-            INFO; printf("entry (%s) not used, deleting\n", cache->request);
+            DEBUG("entry (%s) not used, deleting\n", cache->request);
             struct cache_entry* temp = cache;
             cache = cache->next;
             pfree(temp);
@@ -66,13 +66,13 @@ void cache_add(const char* request, char* response) {
             add_entry = 1;
         }
     } else { // Add entry -- possibly first entry
-        INFO; printf("cache not full\n");
+        DEBUG("cache not full\n");
         num_entries++;
         add_entry = 1;
     }
     
     if (1 == add_entry) {
-        INFO; printf("adding entry (%s)\n", request);
+        DEBUG("adding entry (%s)\n", request);
         // Cache is not empty, make new entry
         if (NULL != cache->request) {
             struct cache_entry* new_entry = palloc(&envp, struct cache_entry);
@@ -90,7 +90,7 @@ void cache_add(const char* request, char* response) {
 void cache_print(void) {
     struct cache_entry* entry = cache;
     do {
-        INFO; printf("entry: request=%s response=%s\n", entry->request, entry->response);
+        DEBUG("entry: request=%s response=%s\n", entry->request, entry->response);
     } while (NULL != (entry = entry->next));
 }
 
@@ -98,7 +98,7 @@ void cache_print(void) {
 // Yes, this is a linear search... 
 // We'll just take the env that the caller has allocated into, to make life easier for all involved parties.
 char* cache_lookup(palloc_env env, const char* request) {
-    INFO; printf("request=%s\n", request);
+    DEBUG("request=%s\n", request);
     struct cache_entry* entry = cache;
     // Go through this awkward dance to not skip the first one.
     if (NULL == entry->request) {

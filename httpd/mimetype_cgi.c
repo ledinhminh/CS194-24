@@ -27,7 +27,7 @@ static int http_get(struct mimetype *mt, struct http_session *s);
 
 struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath)
 {
-    INFO; printf("creating new mimetype_cgi\n");
+    DEBUG("creating new mimetype_cgi\n");
     struct mimetype_cgi *mtc;
 
     mtc = palloc(env, struct mimetype_cgi);
@@ -67,13 +67,13 @@ int http_get(struct mimetype *mt, struct http_session *s)
     real_path = palloc_array(s, char, real_path_len + 1);
     strncpy(real_path, mtc->fullpath, real_path_len);
     *(real_path + real_path_len) = '\0';
-    INFO; printf("fullpath=%s, real_path_len=%d, real_path=%s\n", mtc->fullpath, real_path_len, real_path);
+    DEBUG("fullpath=%s, real_path_len=%d, real_path=%s\n", mtc->fullpath, real_path_len, real_path);
     
     if (NULL == query_string) {
         // Well, we have to have something to give to the program.
         query_string = "";
     } else {
-        INFO; printf("query string: %s\n", query_string);
+        DEBUG("query string: %s\n", query_string);
     }
     
     // Prepare the environment variables.
@@ -102,16 +102,16 @@ int http_get(struct mimetype *mt, struct http_session *s)
         );
         
     strcpy(env_vars + env_vars_len - 1, real_path);
-    INFO; printf("env_vars=%s\n", env_vars);
+    DEBUG("env_vars=%s\n", env_vars);
 
     // No, it cannot be O_RDONLY.
     fp = popen(env_vars, "r"); 
     if (NULL == fp) {
-        INFO; printf("popen returned NULL; strerror: %s\n", strerror(errno));
+        DEBUG("popen returned NULL; strerror: %s\n", strerror(errno));
         return -1;
     }
     fd = fileno(fp);
-    INFO; printf("fp=%p, fd=%d\n", fp, fd);
+    DEBUG("fp=%p, fd=%d\n", fp, fd);
 
     while ((readed = read(fd, buf, BUF_COUNT)) > 0)
     {

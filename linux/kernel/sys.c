@@ -42,11 +42,13 @@
 #include <linux/syscore_ops.h>
 #include <linux/version.h>
 #include <linux/ctype.h>
+#include <linux/list.h>
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
+#include <linux/semaphore.h> /* used for thread limiting */
 
 #include <linux/kmsg_dump.h>
 /* Move somewhere else to avoid recompiling? */
@@ -2164,13 +2166,23 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 				return -EINVAL;
 			return current->no_new_privs ? 1 : 0;
     case PR_SET_THREAD_LIMIT:
-      if (!arg2 || arg3 || arg4 || arg5)
-        // arg2 should be set and should not be 0, it is unsigned so we are
-        // unconcerned for negative values.
-        // We are also enforcing that arg[3-5] not be set as if the user were to
-        // set them then they probably intended for some other behavior.
-        return -EINVAL;
-      return -1; // NOT IMPLEMENTED TODO: IMPLEMENT!
+      if(!me->tl_root_pid){
+        /*
+         * Once tl_root_pid is set do not change it.
+         * This prevents the child of the root from thinking it is the
+         * root allowing it to spawn unlimited children.
+         * Also we only create the master mutex and all running once per root.
+         */
+        me->tl_root_pid = me->pid;
+        me->tl_mutex = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        me->tl_all_running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        sema_init(me->tl_mutex, 1);
+        sema_init(me->tl_all_running, 0);
+      }
+
+      me->tl_start = true;
+      me->tl_max = arg2;
+      break;
 		default:
 			error = -EINVAL;
 			break;

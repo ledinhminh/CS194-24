@@ -40,6 +40,7 @@ struct sched_param {
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
 #include <linux/rtmutex.h>
+#include <linux/semaphore.h>
 
 #include <linux/time.h>
 #include <linux/param.h>
@@ -1187,17 +1188,24 @@ enum perf_event_task_context {
 	perf_nr_task_contexts,
 };
 
-typedef struct thread_limiter {
-  /* Maximum number of threads this process may create,
-   * If value is 0 then process is not limited
-   */
-  unsigned long max_threads;
-  /* Current number of threads in process tree
-     We should only use atomic_add and atomic_dec to update.
-  */
-  unsigned long num_threads;
-} thread_limiter;
+typedef struct tl_limits {
+  /* Next tl_limit */
+  struct tl_limits *next;
 
+  /* Maximum number of threads this process may create,
+   * Use sema_init(&tl_lock, [limit]) to initialize.
+   * Use sema_post and sema_wait to increment/decrement
+   * If ever after decrementing it reaches tl_max then free data
+   */
+  struct semaphore* lock;
+
+  /* tl_running will start at 0 and increment for each running thread. If
+   * tl_running ever reaches 0 then we need to free the memory associated
+   * with tl_lock and tl_running. Use down_trylock() do decrement and if that
+   * function return 1 then free tl_lock and tl_running.
+   */
+  struct semaphore* running;
+} tl_limits;
 
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
@@ -1561,7 +1569,54 @@ struct task_struct {
 	struct uprobe_task *utask;
 #endif
   /* Values for limiting the number of scheduler entities */
-  struct thread_limiter *tlimiter;
+
+  /* We do not want to limit the number of threads the thread that makes
+   * the call to prctl, we only want to limit the number of threads of each
+   * of its children. To do this we keep track of the root pid as tl_root_pid
+   * and if the current thread is not the root then we start a tl_lock on it.
+   * Also if a given thread has a tl_root_pid set and that thread is not the
+   * root, any call to change the thread limit through prctl will return
+   * -EINVAL.
+   */
+  pid_t tl_root_pid;
+
+  /* If tl_max == 0 then then threads aren't limited else they are
+   * Be sure to use atomic_set(&tl_max,0) or atomic_set(&tl_max,1)
+   * for enable/disable.
+   */
+  int tl_max;
+
+  /* We need to know if the child called prctl, to do this we will initialize
+   * tl_start to false and if prctl is called we will set it to true. And all
+   * subsequent children will require additional tl_limits.
+   */
+  bool tl_start;
+
+  /* So the children can call prctl again, so we are going to keep track a list
+   * of tl_locks and tl_running locks to keep track of each level's limits.
+   *
+   * tl_root_pid will still point to the original root so that its children do
+   * not attempt to spawn unimited threads.
+   *
+   * tl_max is only used to initialize tl_lock so changing it doesn't affect
+   * existing locks.
+   */
+  struct tl_limits* tl_limits;
+
+  /* Since we can potentially have multiple subgroups we need to iterate over
+   * the list atomically. To do this we will use a mutex lock to lock the
+   * tl_limits list. This lock will have to lock the entire list not just
+   * sub groups.
+   */
+  struct semaphore* tl_mutex;
+
+  /* We need a way to determine when to free the mutex so we have tl_all_running
+   * that manages the count of all running tasks that are protected by this
+   * mutex. If this count ever attempts to reach -1 we free the mutex and this
+   * mutex.
+   */
+  struct semaphore* tl_all_running;
+
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

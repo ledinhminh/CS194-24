@@ -811,6 +811,9 @@ void do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
+  tl_limits* tl_cur;
+  tl_limits* tl_err;
+
 
 	profile_task_exit(tsk);
 
@@ -820,6 +823,63 @@ void do_exit(long code)
 		panic("Aiee, killing interrupt handler!");
 	if (unlikely(!tsk->pid))
 		panic("Attempted to kill the idle task!");
+  if(tsk->tl_limits != NULL){
+    /* This task was being thread limited, we need to free the state
+     * associated with thread limiting.
+     */
+    down(tsk->tl_mutex);
+    tl_err = NULL;
+
+    tl_cur = tsk->tl_limits;
+    for(; tl_cur; tl_cur = tl_cur->next){
+      if(tl_err != NULL){
+        /* The prior node needed to be freed */
+        kfree(tl_err);
+        tl_err = NULL;
+      }
+
+      if(tl_cur->running != NULL){
+        if(down_trylock(tl_cur->running)){
+          //printk("\n%d exiting! 2 freed\n",
+          //       tsk->pid); // why is tl_cur->running being freed?
+          /* All tasks are done in this sub group so free the memory
+           * Also note that since this task is part of a group that is done
+           * this there is no reason to fix the head node of this task.
+           */
+          //kfree(tl_cur->running);
+          //kfree(tl_cur->lock);
+          //tl_cur->running = NULL;
+          //tl_cur->lock = NULL;
+          tl_err = tl_cur;
+        } else {
+          up(tl_cur->lock);
+        }
+      }
+        else {
+          //printk("\n%d exiting! Cannot figure out why this would be null\n",
+          //       tsk->pid);
+          tl_err = tl_cur; // I guess don't do this :)
+        }
+    }
+
+    if(tl_err != NULL){
+      kfree(tl_err);
+    }
+
+    up(tsk->tl_mutex);
+  }
+
+  if(tsk->tl_all_running != NULL){
+    if(down_trylock(tsk->tl_all_running)){
+      //printk("\n%d FREEING MUTEX\n", tsk->pid);
+      /* All tasks associated with the root node have exited */
+      kfree(tsk->tl_all_running);
+      kfree(tsk->tl_mutex);
+      tsk->tl_all_running = NULL;
+      tsk->tl_mutex = NULL;
+    }
+    //printk("\n%d exiting! IS OUTA HERE!\n", tsk->pid);
+  }
 
 	/*
 	 * If do_exit is called because this processes oopsed, it's possible
@@ -979,6 +1039,7 @@ void do_exit(long code)
 	/* causes final put_task_struct in finish_task_switch(). */
 	tsk->state = TASK_DEAD;
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
+
 	schedule();
 	BUG();
 	/* Avoid "noreturn function does return".  */

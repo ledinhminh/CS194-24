@@ -47,6 +47,7 @@
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
+#include <linux/semaphore.h> /* used for thread limiting */
 
 #include <linux/kmsg_dump.h>
 /* Move somewhere else to avoid recompiling? */
@@ -2164,13 +2165,21 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 				return -EINVAL;
 			return current->no_new_privs ? 1 : 0;
     case PR_SET_THREAD_LIMIT:
-      if (!arg2 || arg3 || arg4 || arg5)
+      if (!arg2) {
         // arg2 should be set and should not be 0, it is unsigned so we are
         // unconcerned for negative values.
-        // We are also enforcing that arg[3-5] not be set as if the user were to
-        // set them then they probably intended for some other behavior.
-        return -EINVAL;
-      return -1; // NOT IMPLEMENTED TODO: IMPLEMENT!
+        error = -EINVAL;
+      } else {
+        if(me->tl_root_pid != NULL && me->tl_root_pid != me->pid){
+          error = -EINVAL;
+        } else {
+          me->tl_root_pid = me->pid;
+          atomic_set(&me->tl_max, arg2);
+          // me->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+          // sema_init(me->tl_lock, arg2);
+        }
+      }
+      break;
 		default:
 			error = -EINVAL;
 			break;

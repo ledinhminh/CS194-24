@@ -979,6 +979,16 @@ void do_exit(long code)
 	/* causes final put_task_struct in finish_task_switch(). */
 	tsk->state = TASK_DEAD;
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
+
+  if(tsk->tl_lock != NULL){
+    up(tsk->tl_lock); /* allow more threads to start */
+    if(down_trylock(tsk->tl_running)){
+      /* Free memory associated with tl_lock and tl_running */
+      kfree(tsk->tl_lock);
+      kfree(tsk->tl_running);
+    }
+  }
+
 	schedule();
 	BUG();
 	/* Avoid "noreturn function does return".  */

@@ -2,40 +2,33 @@
 
 #include <stdbool.h>
 #include <string.h>
-
-#include "http.h"
-#include "mimetype.h"
-#include "palloc.h"
-#include "debug.h"
-
 #include <stdlib.h>
 #include <pthread.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
+
+#include "http.h"
+#include "mimetype.h"
+#include "palloc.h"
+#include "debug.h"
+#include "fd_list.h"
+#include "cache.h"
 
 #define PORT 8088
 #define LINE_MAX 1024
 #define MAX_EVENTS 16
-#define FD_SOCKET 0
-#define FD_READ 1
-#define FD_WRITE 2
+
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP
 
 struct server_thread_args
 {
 	int listen_socket_fd;
 	int epoll_fd;
 	palloc_env* thread_env;
+	struct fd_list* fd_list_head;
 };
-
-struct fd_container
-{
-	int fd;
-	int type;
-	struct http_session *session;
-};
-
-
 
 static int make_socket_non_blocking (int sfd)
 {
@@ -80,20 +73,21 @@ void* start_thread(void *args)
 
 	//create epoll list to store events that need to be handled
 	events = palloc_array(env, struct epoll_event, MAX_EVENTS);
+
 	//i think this will go away eventually
 	server = http_server_new((palloc_env*) targ->thread_env, PORT);
 	server->fd = socket_fd;
 
-	fprintf(stderr, "Started the Thread\n");
+    DEBUG("socket_fd=%d\n", socket_fd);
 
 	if (server == NULL)
-	{
-		perror("Unable to open HTTP server");
-	}
+        DEBUG("cannot allocate server: %s\n", strerror(errno));
 
 	while (true)
 	{
 		struct http_session *session;
+		struct epoll_event event;
+
 		const char *line;
 		char *method, *file, *version;
 		struct mimetype *mt;
@@ -104,105 +98,224 @@ void* start_thread(void *args)
 		int num_active_epoll, index;
 
 		num_active_epoll = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+		if (num_active_epoll < 0 && errno != EINTR) {
+            DEBUG("epoll_wait failure: %s\n", strerror(errno));
+			exit(1);
+		}
 		for (index = 0; index < num_active_epoll; index++)
 		{
-			if ((events[index].events & EPOLLERR) ||
-          (events[index].events & EPOLLHUP) ||
-          (!(events[index].events & EPOLLIN)))
+			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLRDHUP))
 			{
-				//something happened, the socket closed so we should close
-				//it on our side
-				fprintf(stderr, "epoll error\n");
+				// Something happened, the socket closed so we should close
+				// it on our side
+                DEBUG("epoll error\n");
+				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
 				continue;
 			}
 			else if (events[index].data.fd == socket_fd)
 			{
-				//accept the socket
-				INFO;printf("THREAD %lu GOT STUFF\n\n\n", (unsigned long)pthread_self() );
+                DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
+                
+                DEBUG("s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
 
+				// Check if session is NULL
 				if (session == NULL)
 				{
 					fprintf(stderr, "server->wait_for_client() returned NULL...\n");
 					goto rearm;
 				}
+                DEBUG("session not null\n");
 
-				line = session->gets(session);
-				if (line == NULL)
+				// Try to make accepting socket non-blocking
+				if (make_socket_non_blocking(session->fd) < 0)
 				{
-					fprintf(stderr, "Client connected, but no lines could be read\n");
-					goto cleanup;
+                    DEBUG("failed to set non-blocking\n");
+					goto rearm;
 				}
+                DEBUG("socket non-blocking set\n");
 
-				//WTF IS THIS????
-				method = palloc_array(session, char, strlen(line));
-				file = palloc_array(session, char, strlen(line));
-				version = palloc_array(session, char, strlen(line));
-				if (sscanf(line, "%s %s %s", method, file, version) != 3)
+				// Add session to fd_list
+				fd_list_add(env, session->fd, session);
+                DEBUG("added to fd_list\n");
+
+				// Add the accepted socket into epoll
+				struct epoll_event sess_event;
+				sess_event.data.fd = session->fd;
+				sess_event.events = EPOLL_FLAGS;
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &sess_event) < 0) {
+                    DEBUG("couldn't add socket to epoll: %s\n", strerror(errno));
+					goto rearm;
+				}
+                DEBUG("added session socket fd=%d to epoll\n", session->fd);
+
+				rearm:
+				// Rearm the socket
+				// Not sure why, but we have to rearm the socket with the listening socket descriptor
+				// with another instance with the correct event flags...
+				// I guess that the event flags are cleared.
+				event.data.fd = socket_fd;
+				event.events = EPOLL_FLAGS;
+                DEBUG("rearming\n");
+				if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event)) {
+                    DEBUG("epoll_ctl failed: %s\n", strerror(errno));
+				}
+			}
+			else
+			{
+                DEBUG("processing request\n");
+
+				// An accepted socket fd
+				session = fd_list_find(events[index].data.fd);
+				DEBUG("session=%p\n", session);
+
+				//the session at this point can be either a socket_fd or a disk_fd, we should check
+				if (events[index].data.fd == session->fd)
 				{
-					fprintf(stderr, "Improper HTTP request\n");
-					goto cleanup;
+					DEBUG("handling network fd\n");
+					//a socket fd, we should read from it if we have to
+					ssize_t readed = 0;
+					if (session->done_req_read == 0)
+					{
+						while (
+							(readed = read(session->fd, session->buf + session->buf_used, 
+								session->buf_size - session->buf_used)) > 0)
+						{		
+							DEBUG("read %d bytes, buf=(%d bytes)\n", (int) readed, (int) strlen(session->buf));
+						    if (readed > 0)
+						      session->buf_used += readed;
+
+						    if (session->buf_used >= session->buf_size)
+						    {
+						      session->buf_size *= 2;
+						      session->buf = prealloc(session->buf, session->buf_size);
+						    }
+						}				
+						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
+						{
+							DEBUG("done reading\n");
+							//start processing request
+							line = session->gets(session);
+							if (line == NULL)
+							{
+								fprintf(stderr, "Client connected, but no lines could be read\n");
+								goto cleanup;
+							}
+
+							method = palloc_array(session, char, strlen(line));
+							file = palloc_array(session, char, strlen(line));
+							version = palloc_array(session, char, strlen(line));
+							if (sscanf(line, "%s %s %s", method, file, version) != 3)
+							{
+								fprintf(stderr, "Improper HTTP request\n");
+								goto cleanup;
+							}
+
+							fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
+								method, file, version);
+
+							headers = palloc(session, struct http_header);
+							DEBUG("new http_headers at %p\n", headers);
+							session->headers = headers;
+
+							while ((line = session->gets(session)) != NULL)
+							{
+								size_t len;
+
+								len = strlen(line);
+								fprintf(stderr, "[%04lu] < %s\n", len, line);
+								headers->header = line;
+								next_header = palloc(session, struct http_header);
+								headers->next = next_header;
+								headers = next_header;
+	                            headers->header = NULL;
+
+								if (len == 0)
+									break;
+							}
+							mt = mimetype_new(session, file);
+							if (strcasecmp(method, "GET") == 0)
+								mterr = mt->http_get(mt, session, epoll_fd);
+							else
+							{
+								fprintf(stderr, "Unknown method: '%s'\n", method);
+								goto cleanup;
+							}
+
+							if (mterr != 0)
+							{
+								perror("unrecoverable error while processing a client");
+								abort();
+							}
+						}
+						else if (readed == -1 && errno == EAGAIN)
+						{
+							//We got an EGAIN from reading from socket into buffer
+							//We need to rearm
+							DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
+							struct epoll_event event;
+							event.data.fd = session->fd;
+							event.events = EPOLL_FLAGS;
+							if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
+							{
+								perror("EPOLL MOD FAIL\n\n");
+							}
+							continue;
+						}
+						else
+						{
+							//finished reading request
+							session->done_req_read = 1;
+						}
+					}
+					else
+					{
+						//we've already finished reading off the socket
+						mt = mimetype_new(session, file);
+						if (strcasecmp(method, "GET") == 0)
+							mterr = mt->http_get(mt, session, epoll_fd);
+						else
+						{
+							fprintf(stderr, "Unknown method: '%s'\n", method);
+							goto cleanup;
+						}
+
+						if (mterr != 0)
+						{
+							perror("unrecoverable error while processing a client");
+							abort();
+						}
+					}
+
 				}
-
-				fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-                method, file, version);
-
-				headers = palloc(env, struct http_header);
-				INFO; printf("new http_headers at %p\n", headers);
-				session->headers = headers;
-				/* Skip the remainder of the lines */
-        // We can't do this now -- must examine them for If-None-Match
-				while ((line = session->gets(session)) != NULL)
-				{
-					size_t len;
-
-					len = strlen(line);
-					fprintf(stderr, "[%04lu] < %s\n", len, line);
-          // pfree(line);
-					headers->header = line;
-					next_header = palloc(env, struct http_header);
-					headers->next = next_header;
-					headers = next_header;
-
-					if (len == 0)
-						break;
-				}
-
-				mt = mimetype_new(session, file);
-				if (strcasecmp(method, "GET") == 0)
-					mterr = mt->http_get(mt, session);
 				else
 				{
-					fprintf(stderr, "Unknown method: '%s'\n", method);
-					goto cleanup;
+					//a disk_fd, we should read from disk
+					if (strcasecmp(method, "GET") == 0)
+						mterr = mt->http_get(mt, session, epoll_fd);
+					else
+					{
+						fprintf(stderr, "Unknown method: '%s'\n", method);
+						goto cleanup;
+					}
+
+					if (mterr != 0)
+					{
+						perror("unrecoverable error while processing a client");
+						abort();
+					}
+
 				}
 
-				if (mterr != 0)
-				{
-					perror("unrecoverable error while processing a client");
-					abort();
-				}
 
-      cleanup:
-				pfree(session);
 
-        // Now we also have to clean up the header list. What a pain
-				do  {
-          // If we overshot, go home
-					if (NULL == next_header->header)
-						continue;
-          // Free the string.
-					pfree(headers->header);
-          // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
-					pfree(headers);
-				} while (NULL != (headers = headers->next));
-
-      rearm:
-				//rearm the socket
-				INFO;printf("THREAD %lu REARM\n\n\n", (unsigned long)pthread_self() );
-				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &(events[index]));
-
+				cleanup:
+				DEBUG("FINISH EPOLL\n");
+				// close(session->fd);
+				//pfree(session);
+                
+				
 			} //end of else if
 		} //end of epoll event for
 	} //end of while loop
@@ -212,30 +325,18 @@ int main(int argc, char **argv)
 {
 	palloc_env env;
 
-	// SINGLE -----
-	struct http_server *server;
-	// SINGLE -----
-
-  // MULTI ------
-  //server stuff
-  struct server_thread_args thread_args;
-	int debug_threaded;
-  //network stuff
+    struct server_thread_args thread_args;
 	int socket_fd;
-  //epoll stuff
 	int epoll_fd;
+	int proc_num;
 	struct epoll_event event;
-  //threading stuff
-	pthread_t thread1;
-	pthread_t thread2;
-  // MULTI ------
 
-	//Create server environment
-	fprintf(stderr, "initializing env\n");
 	env = palloc_init("httpd root context");
+    cache_init(env);
+
+	proc_num = sysconf( _SC_NPROCESSORS_ONLN );
 
 	//Create a listening sockent and listen on it
-	fprintf(stderr, "listening on port\n");
 	socket_fd = listen_on_port(PORT);
 	if(socket_fd < 0)
 	{
@@ -250,7 +351,7 @@ int main(int argc, char **argv)
 	}
 
 	//Create a new epoll structure
-	fprintf(stderr, "Creating new EPOLL\n");
+	DEBUG("creating new epoll instance\n");
 	epoll_fd = epoll_create1(0);
 	if(epoll_fd < 0)
 	{
@@ -260,126 +361,34 @@ int main(int argc, char **argv)
 
 	//Add the listening socket into epoll
 	event.data.fd = socket_fd;
-	event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+	event.events = EPOLL_FLAGS;
 	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event) < 0)
 	{
 		perror("Couldn't add socket to epoll");
 		return -1;
 	}
 
-	//populate the thread arguments
-	//each thread needs information so we pass it to them in a struct
+	// Populate the thread arguments
+	// Each thread needs information so we pass it to them in a struct
 	thread_args.listen_socket_fd = socket_fd;
 	thread_args.thread_env = &env;
 	thread_args.epoll_fd = epoll_fd;
 
-	debug_threaded = 1; //set to 0 if you want to revert to the old server
-	if (debug_threaded){
-		pthread_create(&thread1, NULL, start_thread, (void*) &thread_args);
-		pthread_create(&thread2, NULL, start_thread, (void*) &thread_args);
-	}
-	else
-	{
-		fprintf(stderr, "Started non thread\n");
-		server = http_server_new(env, PORT);
-		if (server == NULL)
-		{
-			perror("Unable to open HTTP server");
-			return 1;
-		}
+	DEBUG("passing listening socket fd=%d to threads\n", socket_fd);
 
-		while (true)
-		{
-			struct http_session *session;
-			const char *line;
-			char *method, *file, *version;
-			struct mimetype *mt;
-			int mterr;
-			struct http_header* headers;
-			struct http_header* next_header;
-
-			session = server->wait_for_client(server);
-			if (session == NULL)
-			{
-				perror("server->wait_for_client() returned NULL...");
-				pfree(server);
-				return 1;
-			}
-
-			line = session->gets(session);
-			if (line == NULL)
-			{
-				fprintf(stderr, "Client connected, but no lines could be read\n");
-				goto cleanup;
-			}
-
-			method = palloc_array(session, char, strlen(line));
-			file = palloc_array(session, char, strlen(line));
-			version = palloc_array(session, char, strlen(line));
-			if (sscanf(line, "%s %s %s", method, file, version) != 3)
-			{
-				fprintf(stderr, "Improper HTTP request\n");
-				goto cleanup;
-			}
-
-			fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-              method, file, version);
-
-			headers = palloc(env, struct http_header);
-			INFO; printf("new http_headers at %p\n", headers);
-			session->headers = headers;
-      //Skip the remainder of the lines
-      // We can't do this now -- must examine them for If-None-Match
-			while ((line = session->gets(session)) != NULL)
-			{
-				size_t len;
-
-				len = strlen(line);
-				fprintf(stderr, "[%04lu] < %s\n", len, line);
-        // pfree(line);
-				headers->header = line;
-				next_header = palloc(env, struct http_header);
-				headers->next = next_header;
-				headers = next_header;
-
-				if (len == 0)
-					break;
-			}
-
-			mt = mimetype_new(session, file);
-			if (strcasecmp(method, "GET") == 0)
-				mterr = mt->http_get(mt, session);
-			else
-			{
-				fprintf(stderr, "Unknown method: '%s'\n", method);
-				goto cleanup;
-			}
-
-			if (mterr != 0)
-			{
-				perror("unrecoverable error while processing a client");
-				abort();
-			}
-
-    cleanup:
-			pfree(session);
-
-      // Now we also have to clean up the header list. What a pain
-			do  {
-        // If we overshot, go home
-				if (NULL == next_header->header)
-					continue;
-        // Free the string.
-				pfree(headers->header);
-        // Free the node. This really should crash, as we try to access headers->next at the end of the loop. Oh well...
-				pfree(headers);
-			} while (NULL != (headers = headers->next));
-
-		}
+	//create array of pthreads
+	pthread_t *threads;
+	int i;
+	threads = palloc_array(env, pthread_t, proc_num);
+	for (i = 0; i < proc_num; i++){
+		pthread_t thread;
+		pthread_create(&thread, NULL, start_thread, (void*) &thread_args);
+		threads[i] = thread;
 	}
 
-  pthread_join( thread1, NULL);
-  pthread_join( thread2, NULL);
+	for (i = 0; i < proc_num; i++){
+		pthread_join(threads[i], NULL);
+	}
 
 	return 0;
 }

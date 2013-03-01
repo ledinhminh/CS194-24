@@ -1563,6 +1563,8 @@ long do_fork(unsigned long clone_flags,
 	struct task_struct *p;
 	int trace = 0;
 	long nr;
+  tl_limits* tl_cur;
+  tl_limits* tl_err;
 
 	/*
 	 * Do some preliminary argument and permissions checking before we
@@ -1597,19 +1599,29 @@ long do_fork(unsigned long clone_flags,
 			trace = 0;
 	}
 
-  if(current->tl_lock != NULL){
+  if(current->tl_limits != NULL){
+    //printk("\n\nHello, tl_limits is %d, cur pid = %d and root pid = %d\n\n",
+    //       &current->tl_limits, current->pid, current->tl_root_pid);
     /*
-     * If tl_lock isn't null then we are restricting the number of threads this
-     * process can start.
+     * If tl_limits isn't null then we are restricting the number of threads
+     * this process can start.
      */
-
-    if(down_trylock(current->tl_lock)){
-      return -EAGAIN;
+    down(current->tl_mutex);
+    tl_cur = current->tl_limits;
+    for(; tl_cur; tl_cur = tl_cur->next){
+      if(down_trylock(tl_cur->lock)){
+        tl_err = current->tl_limits;
+        for(; tl_err != tl_cur; tl_err = tl_err->next){
+          up(tl_cur->lock);
+          down(tl_cur->running);
+        }
+        up(current->tl_mutex);
+        return -EAGAIN;
+      }
+      up(tl_cur->running);
     }
-    /*
-     * Increase the running sem.
-     */
-    up(current->tl_running);
+    up(current->tl_mutex);
+    up(current->tl_all_running);
   }
 
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
@@ -1635,20 +1647,41 @@ long do_fork(unsigned long clone_flags,
 		}
 
     /*
+     * All new threads will assume they aren't creating additional
+     * locks on child threads.
+     */
+    p->tl_start = false;
+
+    /*
      * If tl_max > 0 then we limit the number of concurrent threads
      * and tl_root_pid != pid.  I don't think it is possible to enter here
      * in such a way that p->tl_root_pid would ever equal p->pid... o well
      */
-    if(atomic_read(&current->tl_max)){
+    if(current->tl_root_pid) {
       /*
        * If tl_lock is null then this is the first thread to be limited by the
        * limiting process; we need to initialize the semaphore.
        */
-      if(current->tl_lock == NULL){
-        p->tl_lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
-        p->tl_running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
-        sema_init(p->tl_lock, atomic_read(&p->tl_max));
-        sema_init(p->tl_running, 0);
+      if(current->tl_start) {
+        struct tl_limits* tl = kmalloc(sizeof(struct tl_limits), GFP_KERNEL);
+
+        if(p->tl_limits == NULL){
+          /* This is a child of the root so we need ot increment the all_running
+           * semaphore so we can clean up after all processes die.
+           */
+          up(p->tl_all_running);
+        }
+
+        /* if tl_start is true on the parent that means at some point it called
+         * prctl to limit threads. This means it will need to create new
+         * tl_limits for each of its children.
+         */
+        tl->next = p->tl_limits;
+        tl->lock = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        tl->running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+        sema_init(tl->lock, p->tl_max);
+        sema_init(tl->running, 0);
+        p->tl_limits = tl;
       }
     }
 

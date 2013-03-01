@@ -18,7 +18,7 @@
 
 #define PORT 8088
 #define LINE_MAX 1024
-#define MAX_EVENTS 16
+#define MAX_EVENTS 1
 
 #define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP
 
@@ -102,6 +102,7 @@ void* start_thread(void *args)
             DEBUG("epoll_wait failure: %s\n", strerror(errno));
 			exit(1);
 		}
+        DEBUG("num_active_epoll=%d\n", num_active_epoll);
 		for (index = 0; index < num_active_epoll; index++)
 		{
 			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLRDHUP))
@@ -118,7 +119,7 @@ void* start_thread(void *args)
                 DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
                 
-                DEBUG("s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
+                DEBUG("s=%p, s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session, session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
 
 				// Check if session is NULL
 				if (session == NULL)
@@ -164,11 +165,16 @@ void* start_thread(void *args)
 			}
 			else
 			{
-                DEBUG("processing request\n");
-
+                DEBUG("processing request, fd=%d\n", events[index].data.fd);
+                fd_list_print();
 				// An accepted socket fd
 				session = fd_list_find(events[index].data.fd);
 				DEBUG("session=%p\n", session);
+                // It happens.
+                if (NULL == session) {
+                    DEBUG("session null. search failed?\n");
+                    exit(1);
+                }
 
 				//the session at this point can be either a socket_fd or a disk_fd, we should check
 				if (events[index].data.fd == session->fd)
@@ -196,6 +202,9 @@ void* start_thread(void *args)
 						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 						{
 							DEBUG("done reading\n");
+                            
+                            session->done_req_read = 1;
+
 							//start processing request
 							line = session->gets(session);
 							if (line == NULL)
@@ -213,9 +222,9 @@ void* start_thread(void *args)
 								goto cleanup;
 							}
 
-							fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
+/* 							fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
 								method, file, version);
-
+ */
 							headers = palloc(session, struct http_header);
 							DEBUG("new http_headers at %p\n", headers);
 							session->headers = headers;
@@ -225,7 +234,7 @@ void* start_thread(void *args)
 								size_t len;
 
 								len = strlen(line);
-								fprintf(stderr, "[%04lu] < %s\n", len, line);
+								// fprintf(stderr, "[%04lu] < %s\n", len, line);
 								headers->header = line;
 								next_header = palloc(session, struct http_header);
 								headers->next = next_header;
@@ -263,12 +272,9 @@ void* start_thread(void *args)
 								perror("EPOLL MOD FAIL\n\n");
 							}
 							continue;
-						}
-						else
-						{
-							//finished reading request
-							session->done_req_read = 1;
-						}
+						} else {
+                            session->done_req_read = 1;
+                        }
 					}
 					else
 					{

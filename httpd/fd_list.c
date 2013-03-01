@@ -98,6 +98,8 @@ void fd_list_del(int fd)
            	// pthread_rwlock_unlock(&fd_list_rwlock);
             // DEBUG("__nr_readers=%d\n", fd_list_rwlock.__data.__nr_readers);
             // We're done, get out.
+            // We're taking full responsibility for freeing here! Yes, I mean it this time!
+            pfree(current);
             current = NULL;
             // DEBUG("released fd_list lock\n");
 		} else {

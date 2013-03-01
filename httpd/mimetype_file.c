@@ -127,6 +127,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         DEBUG("serving request from cache\n");
         char* temp;
         psnprintf(temp, s, "%s%s", s->response, cache_hit);
+        s->done_reading = 1;
         s->response = temp;
         goto write;
     } else {

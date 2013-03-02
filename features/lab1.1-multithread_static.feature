@@ -66,4 +66,4 @@ Feature: Multithreaded HTTP Server
 		When I visit "webclock"
 		Then I should see "00 +0000"
 		When I visit "/lorem.html"
-		Then I should see "Quisque sit amet congue elit"
+		Then I should see "Quisque sit amet congue elit"		

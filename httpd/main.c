@@ -21,7 +21,7 @@
 #define LINE_MAX 1024
 #define MAX_EVENTS 1
 
-#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP | EPOLLHUP
 
 struct server_thread_args
 {
@@ -109,14 +109,25 @@ void* start_thread(void *args)
         DEBUG("num_active_epoll=%d\n", num_active_epoll);
 		for (index = 0; index < num_active_epoll; index++)
 		{
-			if ((events[index].events & EPOLLERR) || (events[index].events & EPOLLRDHUP))
+			if ((events[index].events & EPOLLERR))
 			{
 				// Something happened, the socket closed so we should close
 				// it on our side
-                DEBUG("epoll error\n");
+				DEBUG("EPOLLERR ERROR %s", strerror(errno));
 				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
-				continue;
+			}
+			else if (events[index].events & EPOLLHUP)
+			{
+				DEBUG("EPOLLHUP ERROR %s", strerror(errno));
+				fd_list_del(events[index].data.fd);
+				close(events[index].data.fd);
+			}
+			else if (events[index].events & EPOLLRDHUP)
+			{
+				DEBUG("EPOLLRDHUP ERROR (%i) %s", errno, strerror(errno));
+				fd_list_del(events[index].data.fd);
+				close(events[index].data.fd);
 			}
 			else if (events[index].data.fd == socket_fd)
 			{
@@ -203,7 +214,7 @@ void* start_thread(void *args)
 						      session->buf = prealloc(session->buf, session->buf_size);
 						    }
 						}
-						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
+						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n") || readed < 0)
 						{
 							DEBUG("done reading\n");
 
@@ -268,10 +279,10 @@ void* start_thread(void *args)
 							//We got an EGAIN from reading from socket into buffer
 							//We need to rearm
 							DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
-							struct epoll_event event;
-							event.data.fd = session->fd;
-							event.events = EPOLL_FLAGS;
-							if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &event))
+							struct epoll_event this_event;
+							this_event.data.fd = session->fd;
+							this_event.events = EPOLL_FLAGS;
+							if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, session->fd, &this_event))
 							{
 								perror("EPOLL MOD FAIL\n\n");
 							}

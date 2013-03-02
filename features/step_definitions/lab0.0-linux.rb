@@ -115,8 +115,8 @@ def file_wait_open(filename, options)
   return File.open(filename, options)
 end
 
-Given /^Linux is booted with "(.*?)"$/ do |boot_args|
-  # This lock ensures we aren't brining down the VM while also trying
+def boot_linux(boot_args)
+# This lock ensures we aren't brining down the VM while also trying
   # to read a line from stdout -- this will cause the read to block
   # forever
   @line_lock = Mutex.new
@@ -198,6 +198,27 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   end
 end
 
+def run_cmd(cmd)
+  # Run the command
+  write_line(cmd)
+  # It will be echo'd back by the serial terminal emulation we're
+  # using
+  next_line()
+  # And then it will also print out a confirmation -- this is  
+  # extremenly important because this is the only way to enforce
+  # synchronization between the VM and the host, oherwise we'll end up
+  # with the serial buffer breaking all the ordering (so, for example,
+  # when we want to dump some memory it'll get all lost)
+  STDERR.puts next_line()
+
+  #sleep to wait for stuff to run
+  sleep(3)
+end
+
+Given /^Linux is booted with "(.*?)"$/ do |boot_args|
+  boot_linux(boot_args)
+end
+
 Then /^the extra version should be "(.*?)"$/ do |extra_version|
   # We just need to read the output, this special init already prints
   # out the version information
@@ -222,3 +243,20 @@ Then /^Linux should shut down cleanly$/ do
   # Clean up after any potential left over QEMU cruft
   `./boot_qemu --cleanup`
 end
+
+When /^the "(.*?)" command is issued$/ do |command|
+  run_cmd(command)
+end
+
+Then /^Qemu gets killed$/ do
+  kill_qemu()
+end
+
+Before do 
+  if !$dunit 
+    # do it
+    boot_linux("")
+    run_cmd("httpd")
+    $dunit = true 
+  end 
+end 

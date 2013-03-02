@@ -128,6 +128,8 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
                 DEBUG("cached copy still valid\n");
                 s->done_reading = 1;
                 s->response = cache_hit;
+                s->buf_used = 0;
+                s->buf_size = strlen(cache_hit);
                 write_to_socket(s, epoll_fd);
             } else { // invalidate
                 DEBUG("request stale, deleting\n");
@@ -138,6 +140,8 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
             DEBUG("no Expires: header, unconditionally caching\n");
             s->done_reading = 1;
             s->response = cache_hit;
+            s->buf_used = 0;
+            s->buf_size = strlen(cache_hit);
             write_to_socket(s, epoll_fd);
         }
     }
@@ -166,7 +170,6 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
                 disk_buf = prealloc(disk_buf, disk_buf_size);
             }
         }
-
         // Finished reading from disk setup for writing to socket
         char* temp;
         psnprintf(temp, s, "%s", disk_buf);
@@ -214,6 +217,8 @@ int write_to_socket(struct http_session *s, int epoll_fd) {
 		return 0;
 	} else {
 		DEBUG("error writing to socket: %s\nBUF: %s\n", strerror(errno),s->response);
+        fd_list_del(s->fd);
+        close(s->fd);
 		return -1;
 	}
 }

@@ -143,7 +143,7 @@ int main(int argc, char **argv)
           "Date: %s\r\n"
           "Expires: %s\r\n"
           "ETag: \"%lx\"\r\n"
-          "\r\n",
+          "\r\n\r\n",
           rt,
           ct,
           tv.tv_sec

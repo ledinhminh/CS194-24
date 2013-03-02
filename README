@@ -1,0 +1,5 @@
+For Testing:
+
+Couldn't figure out why when we make cucumber run the server
+everything crashes and fails. Make sure to start the server manually
+before you start the cucumber tests.

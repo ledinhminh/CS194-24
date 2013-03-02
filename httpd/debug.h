@@ -7,7 +7,7 @@
 #include <sys/syscall.h>
 #include <pthread.h>
 
-// #define RELEASE
+#define RELEASE
 
 // There is a possibility it won't be used
 static pthread_mutex_t __attribute__((unused)) __stdout_mutex = PTHREAD_MUTEX_INITIALIZER;

@@ -271,6 +271,7 @@ void* start_thread(void *args)
 							{
 								perror("EPOLL MOD FAIL\n\n");
 							}
+							DEBUG("ARMED IN EPOLL, CONTINUING\n");
 							continue;
 						} else {
                             session->done_req_read = 1;

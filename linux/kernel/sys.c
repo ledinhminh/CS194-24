@@ -2178,10 +2178,14 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
         me->tl_all_running = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
         sema_init(me->tl_mutex, 1);
         sema_init(me->tl_all_running, 0);
+        printk(KERN_DEBUG "%d:PR_STL, root node created\n", me->pid);
+      } else {
+        printk(KERN_DEBUG "%d:PR_STL, called, non root node\n", me->pid);
       }
 
       me->tl_start = true;
       me->tl_max = arg2;
+      printk(KERN_DEBUG "%d:PR_STL, limit set to %d\n", me->pid, me->tl_max);
       break;
 		default:
 			error = -EINVAL;

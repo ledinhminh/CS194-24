@@ -1607,21 +1607,32 @@ long do_fork(unsigned long clone_flags,
      * this process can start.
      */
     down(current->tl_mutex);
+    printk(KERN_DEBUG"%d:Fork, In Critical Section\n", current->pid);
     tl_cur = current->tl_limits;
     for(; tl_cur; tl_cur = tl_cur->next){
       if(down_trylock(tl_cur->lock)){
         tl_err = current->tl_limits;
+        printk(KERN_DEBUG"%d:Fork, Thread Limit Reached on %p\n", current->pid, tl_cur->lock);
         for(; tl_err != tl_cur; tl_err = tl_err->next){
-          up(tl_cur->lock);
-          down(tl_cur->running);
+          up(tl_err->lock);
+          down(tl_err->running);
+          printk(KERN_DEBUG "%d:Fork, up(lock[%p])\n", current->pid, tl_err->lock);
+          printk(KERN_DEBUG "%d:Fork, down(running[%p])\n", current->pid, tl_err->running);
         }
+        printk(KERN_DEBUG"%d:Fork, Exit Critical Section\n", current->pid);
         up(current->tl_mutex);
         return -EAGAIN;
       }
+      printk(KERN_DEBUG "%d:Fork, down(lock[%p])\n", current->pid, tl_cur->lock);
       up(tl_cur->running);
+      printk(KERN_DEBUG "%d:Fork, up(running[%p])\n", current->pid, tl_cur->running);
     }
-    up(current->tl_mutex);
-    up(current->tl_all_running);
+  } else if (current->tl_root_pid && current->tl_root_pid == current->pid) {
+    /* The root node doesn't need to above block but is still needs to acquire
+     * the mutex.
+     */
+    down(current->tl_mutex);
+    printk(KERN_DEBUG"%d:Fork, ROOT In Critical Section\n", current->pid);
   }
 
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
@@ -1665,13 +1676,6 @@ long do_fork(unsigned long clone_flags,
       if(current->tl_start) {
         struct tl_limits* tl = kmalloc(sizeof(struct tl_limits), GFP_KERNEL);
 
-        if(p->tl_limits == NULL){
-          /* This is a child of the root so we need ot increment the all_running
-           * semaphore so we can clean up after all processes die.
-           */
-          up(p->tl_all_running);
-        }
-
         /* if tl_start is true on the parent that means at some point it called
          * prctl to limit threads. This means it will need to create new
          * tl_limits for each of its children.
@@ -1682,7 +1686,18 @@ long do_fork(unsigned long clone_flags,
         sema_init(tl->lock, p->tl_max);
         sema_init(tl->running, 0);
         p->tl_limits = tl;
+        printk(KERN_DEBUG "%d:Fork, created new limit on %d of %d, running is 0.\n",
+               current->pid, p->pid, p->tl_max);
+        printk(KERN_DEBUG "\t\t&tl_limits = 0x%p\n\t\t&lock = 0x%p,\n\t\t&running = 0x%p\n",
+               p->tl_limits, tl->lock, tl->running);
+      } else {
+        printk(KERN_DEBUG "%d:Fork, Copy existing limits to %d\n", current->pid, p->pid);
       }
+
+      printk(KERN_DEBUG "%d:Fork, Exit Critical Section\n", current->pid);
+      up(current->tl_all_running);
+      printk(KERN_DEBUG "%d:Fork, increasing all_running\n", current->pid);
+      up(current->tl_mutex);
     }
 
 		wake_up_new_task(p);

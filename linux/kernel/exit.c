@@ -829,56 +829,74 @@ void do_exit(long code)
      */
     down(tsk->tl_mutex);
     tl_err = NULL;
+    printk(KERN_DEBUG"%d:Exit, In Critical Section %p\n", tsk->pid, tsk->tl_mutex);
 
     tl_cur = tsk->tl_limits;
     for(; tl_cur; tl_cur = tl_cur->next){
       if(tl_err != NULL){
         /* The prior node needed to be freed */
-        kfree(tl_err);
+        printk(KERN_DEBUG"%d:Exit, FREEING tl_limits(%p)\n", tsk->pid, tl_err);
+        //kfree(tl_err);
         tl_err = NULL;
       }
 
       if(tl_cur->running != NULL){
         if(down_trylock(tl_cur->running)){
-          //printk("\n%d exiting! 2 freed\n",
-          //       tsk->pid); // why is tl_cur->running being freed?
           /* All tasks are done in this sub group so free the memory
            * Also note that since this task is part of a group that is done
            * this there is no reason to fix the head node of this task.
            */
-          //kfree(tl_cur->running);
-          //kfree(tl_cur->lock);
-          //tl_cur->running = NULL;
-          //tl_cur->lock = NULL;
+          printk(KERN_DEBUG"%d:Exit, FREEING tl_cur(%p)->running(%p)\n", tsk->pid, tl_cur, tl_cur->running);
+          printk(KERN_DEBUG"%d:Exit, FREEING tl_cur(%p)->lock(%p)\n", tsk->pid, tl_cur, tl_cur->lock);
+          kfree(tl_cur->running);
+          kfree(tl_cur->lock);
+          tl_cur->running = NULL;
+          tl_cur->lock = NULL;
           tl_err = tl_cur;
         } else {
+          printk(KERN_DEBUG"%d:Exit, down(tl_cur(%p)->running(%p)\n", tsk->pid, tl_cur, tl_cur->running);
           up(tl_cur->lock);
+          printk(KERN_DEBUG"%d:Exit, up(tl_cur(%p)->lock(%p)\n", tsk->pid, tl_cur, tl_cur->lock);
         }
       }
         else {
-          //printk("\n%d exiting! Cannot figure out why this would be null\n",
-          //       tsk->pid);
+          printk(KERN_DEBUG"%d:Exit, STRANGE ISSUE, tl_cur(%p)->running is NULL\n",
+                 tsk->pid, tl_cur);
           tl_err = tl_cur; // I guess don't do this :)
+          /* not sure why this happens... I think we should break the loop att */
+          break;
         }
     }
 
     if(tl_err != NULL){
-      kfree(tl_err);
+      printk(KERN_DEBUG"%d:Exit, outside FREEING tl_limits(%p)\n", tsk->pid, tl_err);
+      //kfree(tl_err);
     }
 
-    up(tsk->tl_mutex);
+  } else if (tsk->tl_root_pid == tsk->pid) {
+    /* The root node doesn't need to above block but is still needs to acquire
+     * the mutex.
+     */
+    down(tsk->tl_mutex);
+    printk(KERN_DEBUG"%d:Exit, ROOT In Critical Section %p\n", tsk->pid, tsk->tl_mutex);
   }
 
   if(tsk->tl_all_running != NULL){
     if(down_trylock(tsk->tl_all_running)){
-      //printk("\n%d FREEING MUTEX\n", tsk->pid);
       /* All tasks associated with the root node have exited */
+      printk(KERN_DEBUG"%d:Exit, FREEING ALL_RUNNING AND MASTER MUTEX\n", tsk->pid);
       kfree(tsk->tl_all_running);
+      printk(KERN_DEBUG"%d:Exit, Exit Critical Section\n", tsk->pid);
+      up(tsk->tl_mutex);
       kfree(tsk->tl_mutex);
       tsk->tl_all_running = NULL;
       tsk->tl_mutex = NULL;
+    } else {
+      printk(KERN_DEBUG"%d:Exit, Exit Critical Section\n", tsk->pid);
+      up(tsk->tl_mutex);
+      printk(KERN_DEBUG "%d:Exit, down(tl_all_running)\n", tsk->pid);
     }
-    //printk("\n%d exiting! IS OUTA HERE!\n", tsk->pid);
+    printk(KERN_DEBUG "%d:Exit, Process has exited\n", tsk->pid);
   }
 
 	/*

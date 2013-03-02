@@ -21,12 +21,12 @@ int main(int argc, char **argv)
   int i = 0;
   int j = 0;
   int pid = 0;
-  int s = 4;
+  int s = 1;
 
   pid = fork();
   if(pid == 0){
-    for(i = 0; i < 2; ++i){
-      prctl(41, 1);
+    prctl(41, 2);
+    for(i = 0; i < 4; ++i){
       pid = fork();
       if(pid == 0){
         for(j = 0; j < 3; ++j){

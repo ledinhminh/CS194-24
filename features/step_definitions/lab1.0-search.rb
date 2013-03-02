@@ -6,7 +6,7 @@ When /^I am on the root page$/ do
     visit '/'
 end
 
-When /^I (visit|am on) "(.*?)"$/ do |url|
+When /^I visit "(.*?)"$/ do |url|
     visit url
 end
 

@@ -276,7 +276,6 @@ void* start_thread(void *args)
 								perror("EPOLL MOD FAIL\n\n");
 							}
 							DEBUG("ARMED IN EPOLL, CONTINUING\n");
-							continue;
 						} else {
                             session->done_req_read = 1;
                         }
@@ -302,9 +301,9 @@ void* start_thread(void *args)
 
 				}
 
-				cleanup:
-                DEBUG("finished processing request\n");
 			}
+			cleanup:
+            DEBUG("finished processing request\n");
 		}
 	}
 }

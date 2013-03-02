@@ -139,7 +139,7 @@ int main(int argc, char **argv)
 
   fprintf(stdout,
           "HTTP/1.1 200 OK\r\n"
-          "Content-Type: text/text\r\n"
+          "Content-Type: text/plain\r\n"
           "Date: %s\r\n"
           "Expires: %s\r\n"
           "ETag: \"%lx\"\r\n"

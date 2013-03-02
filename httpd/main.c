@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/prctl.h>
 
 #include "http.h"
 #include "mimetype.h"
@@ -64,6 +65,9 @@ void* start_thread(void *args)
 	int epoll_fd;
 	int socket_fd;
 
+  // Limit this threads number of children this threads children
+  // can spawn to the number of cores on this system.
+  prctl(41, sysconf( _SC_NPROCESSORS_ONLN ));
 
 	//pull stuff out of the thread arguments struct
 	targ = (struct server_thread_args*) args;
@@ -118,7 +122,7 @@ void* start_thread(void *args)
 			{
                 DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
-                
+
                 DEBUG("s=%p, s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session, session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
 
 				// Check if session is NULL
@@ -186,9 +190,9 @@ void* start_thread(void *args)
 					if (session->done_req_read == 0)
 					{
 						while (
-							(readed = read(session->fd, session->buf + session->buf_used, 
+							(readed = read(session->fd, session->buf + session->buf_used,
 								session->buf_size - session->buf_used)) > 0)
-						{		
+						{
 							DEBUG("read %d bytes, buf=(%d bytes)\n", (int) readed, (int) strlen(session->buf));
 						    if (readed > 0)
 						      session->buf_used += readed;
@@ -198,11 +202,11 @@ void* start_thread(void *args)
 						      session->buf_size *= 2;
 						      session->buf = prealloc(session->buf, session->buf_size);
 						    }
-						}				
+						}
 						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n"))
 						{
 							DEBUG("done reading\n");
-                            
+
                             session->done_req_read = 1;
 
 							//start processing request
@@ -302,8 +306,8 @@ void* start_thread(void *args)
                 DEBUG("finished processing request\n");
 			}
 		}
-	} 
-} 
+	}
+}
 
 int main(int argc, char **argv)
 {

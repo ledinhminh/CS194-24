@@ -213,7 +213,7 @@ int write_to_socket(struct http_session *s, int epoll_fd) {
 		close(s->fd);
 		return 0;
 	} else {
-		DEBUG("error writing to socket: %s\n", strerror(errno));
+		DEBUG("error writing to socket: %s\nBUF: %s\n", strerror(errno),s->response);
 		return -1;
 	}
 }

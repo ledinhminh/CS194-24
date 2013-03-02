@@ -91,10 +91,8 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         // If we overshot, go home
         if (NULL == next_header->header)
             break;
-        DEBUG("next_header->header: %p\n", next_header->header);
-        DEBUG("next_header->header: %s\n", next_header->header);
 
-        // This is the headewr we want. Success
+        // This is the header we want. Success
         if (NULL != strstr(next_header->header, IF_NONE_MATCH)) {
             etag_matches = strcmp(next_header->header + strlen(IF_NONE_MATCH), time_repr);
         }
@@ -129,6 +127,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         DEBUG("serving request from cache\n");
         char* temp;
         psnprintf(temp, s, "%s%s", s->response, cache_hit);
+        s->done_reading = 1;
         s->response = temp;
         goto write;
     } else {
@@ -186,7 +185,6 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     if (NULL == s->response) {
         DEBUG("s->response is null...\n");
     }
-    DEBUG("s->response: %p; %d\n", s->response, *(s->response));
     response_length = strlen(s->response);
     DEBUG("writing %d bytes\n", response_length); 
     while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)

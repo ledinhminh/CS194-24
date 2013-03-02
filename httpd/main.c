@@ -67,7 +67,7 @@ void* start_thread(void *args)
 
   // Limit this threads number of children this threads children
   // can spawn to the number of cores on this system.
-  prctl(41, sysconf( _SC_NPROCESSORS_ONLN ));
+  // prctl(41, sysconf( _SC_NPROCESSORS_ONLN )); // Not required
 
 	//pull stuff out of the thread arguments struct
 	targ = (struct server_thread_args*) args;

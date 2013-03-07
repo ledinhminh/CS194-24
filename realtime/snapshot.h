@@ -36,6 +36,14 @@ enum snap_trig
  *
  * events         An array of length "n" of the events to trigger on
  *
+ * device         The device ID to trigger on, used to distinguish between
+ *                different devices in the same subsystem.  For CBS
+ *                this indicates the processor ID.  Note that you must
+ *                process snapshots in parallel: in other words, when
+ *                snapshot() is called each device should mantain its
+ *                own queue of (trigger, /proc/snapshot file) pairs
+ *                and process them in order.
+ *
  * triggers       An array of length "n" of the trigger types
  *
  * n              The length of those arrays
@@ -43,8 +51,11 @@ enum snap_trig
  * return         0 on success, -1 on failure.  This call is non-blocking
  *
  * EINVAL         The kernel cannot take "n" snapshots at once.
+ *
+ * EAGAIN         The kernel is currently taking a snapshot.
  */
-int snapshot(enum snap_event *events, enum snap_trig *triggers, size_t n);
+int snapshot(enum snap_event *events, int *device,
+	     enum snap_trig *triggers, size_t n);
 
 /*
  * Waits for the previous set of snapshots to complete

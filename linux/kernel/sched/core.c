@@ -3680,7 +3680,9 @@ __setscheduler(struct rq *rq, struct task_struct *p, int policy, int prio)
 	p->normal_prio = normal_prio(p);
 	/* we are holding p->pi_lock already */
 	p->prio = rt_mutex_getprio(p);
-	if (rt_prio(p->prio))
+	if (policy == SCHED_CBS){
+		p->sched_class = &cbs_sched_class;
+	} else if (rt_prio(p->prio))
 		p->sched_class = &rt_sched_class;
 	else
 		p->sched_class = &fair_sched_class;
@@ -3841,6 +3843,15 @@ recheck:
 
 	oldprio = p->prio;
 	prev_class = p->sched_class;
+
+	if(policy == SCHED_CBS){
+		p->deadline = param->deadline;
+		p->curr_budget = param->curr_budget;
+		p->init_budget = param->init_budget;
+		p->utilization = param->utilization;
+		p->is_rt = param->is_rt;
+		p->period = param->period;
+	}
 	__setscheduler(rq, p, policy, param->sched_priority);
 
 	if (running)

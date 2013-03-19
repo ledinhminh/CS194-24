@@ -45,7 +45,7 @@ extern __read_mostly int scheduler_running;
 
 static inline int rt_policy(int policy)
 {
-	if (policy == SCHED_FIFO || policy == SCHED_RR)
+	if (policy == SCHED_FIFO || policy == SCHED_RR || policy == SCHED_CBS)
 		return 1;
 	return 0;
 }
@@ -844,7 +844,7 @@ extern const struct sched_class stop_sched_class;
 extern const struct sched_class rt_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
-
+extern const struct sched_class cbs_sched_class;
 
 #ifdef CONFIG_SMP
 

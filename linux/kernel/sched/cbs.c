@@ -37,6 +37,11 @@ static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 
 }
 
+void init_cbs_rq(struct cbs_rq *cbs_rq)
+{
+	cbs_rq->tasks_timeline = RB_ROOT;
+}
+
 const struct sched_class cbs_sched_class = {
 
 	.next = &rt_sched_class,

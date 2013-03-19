@@ -200,12 +200,10 @@ struct cfs_bandwidth { };
 
 /* CBS-related fields in a runqueue */
 struct cbs_rq {
-  unsigned long long deadline;
-  unsigned long long budget;
-  unsigned long long utilization;
-  unsigned long long period;
-  int is_rt;
-}
+	struct rb_root tasks_timeline;
+	struct rb_node *rb_leftmost;
+	//should be RB tree
+};
 
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
@@ -379,7 +377,7 @@ struct rq {
 
 	struct cfs_rq cfs;
 	struct rt_rq rt;
-  struct cbs_rq cbs;
+  	struct cbs_rq cbs;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */
@@ -1161,6 +1159,7 @@ extern void print_rt_stats(struct seq_file *m, int cpu);
 
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq, struct rq *rq);
+extern void init_cbs_rq(struct cbs_rq *cbs_rq);
 
 extern void account_cfs_bandwidth_used(int enabled, int was_enabled);
 

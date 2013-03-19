@@ -1181,6 +1181,19 @@ struct sched_rt_entity {
 #endif
 };
 
+
+struct sched_cbs_entity {
+
+	//RB stuff in here
+	struct rb_node run_node;
+
+	unsigned long long deadline;
+	unsigned long long curr_budget;
+	unsigned long long init_budget;
+	double utilization;
+	unsigned long long period;
+	int type;
+};
 /*
  * default timeslice is 100 msecs (used only for SCHED_RR tasks).
  * Timeslices get refilled after they expire.
@@ -1222,14 +1235,6 @@ struct task_struct {
 	unsigned int flags;	/* per process flags, defined below */
 	unsigned int ptrace;
 
-	/*CBS Stuff*/
-	unsigned long long deadline;
-	unsigned long long curr_budget;
-	unsigned long long init_budget;
-	unsigned long long utilization;
-	unsigned long long period;
-	int is_rt;	
-
 #ifdef CONFIG_SMP
 	struct llist_node wake_entry;
 	int on_cpu;
@@ -1241,6 +1246,7 @@ struct task_struct {
 	const struct sched_class *sched_class;
 	struct sched_entity se;
 	struct sched_rt_entity rt;
+	struct sched_cbs_entity cbs;
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group *sched_task_group;
 #endif

@@ -3844,13 +3844,13 @@ recheck:
 	oldprio = p->prio;
 	prev_class = p->sched_class;
 
-	if(policy == SCHED_CBS){
-		p->deadline = param->deadline;
-		p->curr_budget = param->curr_budget;
-		p->init_budget = param->init_budget;
-		p->utilization = param->utilization;
-		p->is_rt = param->is_rt;
-		p->period = param->period;
+	if (policy == SCHED_CBS) {
+		p->cbs.deadline = param->deadline;
+		p->cbs.curr_budget = param->curr_budget;
+		p->cbs.init_budget = param->init_budget;
+		p->cbs.utilization = param->utilization;
+		p->cbs.type = param->type;
+		p->cbs.period = param->period;
 	}
 	__setscheduler(rq, p, policy, param->sched_priority);
 
@@ -6825,6 +6825,7 @@ void __init sched_init(void)
 		rq->calc_load_update = jiffies + LOAD_FREQ;
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt, rq);
+		init_cbs_rq(&rq->cbs);
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);

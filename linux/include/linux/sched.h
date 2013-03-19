@@ -11,9 +11,9 @@ struct sched_param {
 	unsigned long long deadline;
 	unsigned long long curr_budget;
 	unsigned long long init_budget;
-	unsigned long long utilization;
+	double utilization;
 	unsigned long long period;
-	int is_rt;
+	int type;
 };
 
 #include <asm/param.h>	/* for HZ */

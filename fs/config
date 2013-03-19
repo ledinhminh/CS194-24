@@ -55,3 +55,6 @@ file /var/www/test7.html www/test.html 666 0 0
 file /var/www/test8.html www/test.html 666 0 0
 file /var/www/test9.html www/test.html 666 0 0
 file /var/www/lorem.html www/test2.html 666 0 0
+
+#Stuff for realtime
+file /bin/realtime .obj/realtime 777 0 0

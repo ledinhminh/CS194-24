@@ -1,38 +1,38 @@
 # A simple real-time application that communicates over shared memory
 # to a controlling process.
-REALTIME_SRC := ./realtime/cbs.c ./realtime/rt.c
-REALTIME_HDR := $(wildcard ./realtime/*.h)
-REALTIME_OBJ := $(REALTIME_SRC:%.c=%.o)
-REALTIME_OBJ := $(REALTIME_OBJ:./realtime/%=./.obj/realtime.d/%)
-REALTIME_DEP := $(REALTIME_OBJ:%.o:%.d)
+CBSTIME_SRC := ./cbstime/cbs.c ./cbstime/rt.c
+CBSTIME_HDR := $(wildcard ./cbstime/*.h)
+CBSTIME_OBJ := $(CBSTIME_SRC:%.c=%.o)
+CBSTIME_OBJ := $(CBSTIME_OBJ:./cbstime/%=./.obj/cbstime.d/%)
+CBSTIME_DEP := $(CBSTIME_OBJ:%.o:%.d)
 BOGO_MIPS    := $(shell cat /proc/cpuinfo  | grep bogomips | head -n1 | cut -d ':' -f2 | sed s/\ //g)
-REALTIME_FLAGS := -pthread -DBOGO_MIPS=$(BOGO_MIPS)
+CBSTIME_FLAGS := -pthread -DBOGO_MIPS=$(BOGO_MIPS)
 
--include $(REALTIME_DEP) 
+-include $(CBSTIME_DEP) 
 
-all: .obj/realtime
-.obj/realtime: $(REALTIME_OBJ)
-	gcc -static -g $(REALTIME_FLAGS) $(CFLAGS) -o "$@" $^ -lrt
+all: .obj/cbstime
+.obj/cbstime: $(CBSTIME_OBJ)
+	gcc -static -g $(CBSTIME_FLAGS) $(CFLAGS) -o "$@" $^ -lrt
 
-.obj/realtime.d/%.o : realtime/%.c $(REALTIME_HDR)
+.obj/cbstime.d/%.o : cbstime/%.c $(CBSTIME_HDR)
 	mkdir -p `dirname $@`
-	gcc -g -c -o $@ $(REALTIME_FLAGS) $(CFLAGS) -MD -MP -MF ${@:.o=.d} $<
+	gcc -g -c -o $@ $(CBSTIME_FLAGS) $(CFLAGS) -MD -MP -MF ${@:.o=.d} $<
 
 # A simple real-time application that communicates over shared memory
 # to a controlling process.
-REALTIMECTL_SRC := ./realtime/ctl.c
-REALTIMECTL_HDR := $(wildcard ./realtimectl/*.h)
-REALTIMECTL_OBJ := $(REALTIMECTL_SRC:%.c=%.o)
-REALTIMECTL_OBJ := $(REALTIMECTL_OBJ:./realtime/%=./.obj/realtimectl.d/%)
-REALTIMECTL_DEP := $(REALTIMECTL_OBJ:%.o:%.d)
-REALTIMECTL_FLAGS := -pthread
+CBSTIMECTL_SRC := ./cbstime/ctl.c
+CBSTIMECTL_HDR := $(wildcard ./cbstimectl/*.h)
+CBSTIMECTL_OBJ := $(CBSTIMECTL_SRC:%.c=%.o)
+CBSTIMECTL_OBJ := $(CBSTIMECTL_OBJ:./cbstime/%=./.obj/cbstimectl.d/%)
+CBSTIMECTL_DEP := $(CBSTIMECTL_OBJ:%.o:%.d)
+CBSTIMECTL_FLAGS := -pthread
 
--include $(REALTIMECTL_DEP) 
+-include $(CBSTIMECTL_DEP) 
 
-all: .obj/realtimectl
-.obj/realtimectl: $(REALTIMECTL_OBJ)
-	gcc -static -g $(REALTIMECTL_FLAGS) $(CFLAGS) -o "$@" $^
+all: .obj/cbstimectl
+.obj/cbstimectl: $(CBSTIMECTL_OBJ)
+	gcc -static -g $(CBSTIMECTL_FLAGS) $(CFLAGS) -o "$@" $^
 
-.obj/realtimectl.d/%.o : realtime/%.c $(REALTIMECTL_HDR)
+.obj/cbstimectl.d/%.o : cbstime/%.c $(CBSTIMECTL_HDR)
 	mkdir -p `dirname $@`
-	gcc -g -c -o $@ $(REALTIMECTL_FLAGS) $(CFLAGS) -MD -MP -MF ${@:.o=.d} $<
+	gcc -g -c -o $@ $(CBSTIMECTL_FLAGS) $(CFLAGS) -MD -MP -MF ${@:.o=.d} $<

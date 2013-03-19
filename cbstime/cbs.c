@@ -17,6 +17,9 @@
 #include <sys/syscall.h>
 #include <time.h>
 
+// System headers... ~___~
+#define SCHED_CBS 24
+
 #ifndef BOGO_MIPS
 #warning "BOGO_MIPS isn't defined, it should be by the build system"
 #endif
@@ -63,21 +66,24 @@ static void *pthread_wrapper(void *arg)
             its.it_value.tv_nsec = cs->period.tv_usec * 1000;
     }
 
-
-
-    struct sched_param cbs_params = {
-       .sched_priority = 0, //we don't use it
+    struct _sched_param cbs_params = {
+       // .sched_priority = 0, //we don't use it
        .deadline = 0, //set by scheduler
        .curr_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
        .init_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
        .period = ((cs->period.tv_sec*MICRO) + cs->period.tv_usec) * 1000, //value is in nanoseconds
        .utilization = mi_frac/(cs->period.tv_sec + (cs->period.tv_usec/MICRO)), //set by scheduler, initial budget/period
        .type = cs->type, 
-    } 
-    sched_setscheduler(syscall(__NR_gettid), SCHED_CBS, &cbs_params);
+    };
+
+    sched_setscheduler(\
+        syscall(__NR_gettid), \
+        SCHED_CBS, \
+        ((const struct sched_param *) &cbs_params));
 
     //check cs->ret after it gets run and reschedule if needbe
     cs->ret = cs->entry(cs->arg);
+    return NULL;
 }
 
 int cbs_create(cbs_t *thread, enum cbs_type type,
@@ -98,7 +104,7 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     cs->cpu = cpu;
     cs->type = type;
 
-    if (pthread_create(&cs->thread, NULL &pthread_wrapper, cs) != 0)
+    if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();
 
     return 0;

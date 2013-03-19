@@ -63,4 +63,16 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
  */
 int cbs_join(cbs_t *thread, int *code);
 
+struct _sched_param {
+	int sched_priority;
+
+	/*CBS SCHEDULER STUFF*/
+	unsigned long long deadline;
+	unsigned long long curr_budget;
+	unsigned long long init_budget;
+	double utilization;
+	unsigned long long period;
+	int type;
+};
+
 #endif

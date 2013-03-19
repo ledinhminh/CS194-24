@@ -23,8 +23,8 @@ static void dequeue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 
 static struct task_struct *pick_next_task_cbs(struct rq *rq)
 {
-	return NULL;
 	/* Return null to singal next sched */
+	return NULL;
 }
 
 static void check_preempt_curr_cbs(struct rq *rq, struct task_struct *p, int flags)
@@ -48,4 +48,3 @@ const struct sched_class cbs_sched_class = {
 	.pick_next_task = pick_next_task_cbs,
 	.task_tick = task_tick_cbs,
 };
-

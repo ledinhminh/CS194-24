@@ -198,6 +198,15 @@ struct cfs_bandwidth { };
 
 #endif	/* CONFIG_CGROUP_SCHED */
 
+/* CBS-related fields in a runqueue */
+struct cbs_rq {
+  unsigned long long deadline;
+  unsigned long long budget;
+  unsigned long long utilization;
+  unsigned long long period;
+  int is_rt;
+}
+
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
 	struct load_weight load;
@@ -370,6 +379,7 @@ struct rq {
 
 	struct cfs_rq cfs;
 	struct rt_rq rt;
+  struct cbs_rq cbs;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */
@@ -1212,4 +1222,3 @@ static inline u64 irq_time_read(int cpu)
 }
 #endif /* CONFIG_64BIT */
 #endif /* CONFIG_IRQ_TIME_ACCOUNTING */
-

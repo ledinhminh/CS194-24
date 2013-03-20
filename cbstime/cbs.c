@@ -54,6 +54,7 @@ static void *pthread_wrapper(void *arg)
     /*gotta convert BOGOMIPs to secs and nanos*/
     struct itimerspec its;
     double mi_frac = cs->cpu / BOGO_MIPS;
+
     memset(&its, 0, sizeof(its)); //zero it out
     if (cs->type == CBS_RT)
     {
@@ -76,10 +77,12 @@ static void *pthread_wrapper(void *arg)
        .type = cs->type, 
     };
 
-    sched_setscheduler(\
+    if((sched_setscheduler(\
         syscall(__NR_gettid), \
         SCHED_CBS, \
-        ((const struct sched_param *) &cbs_params));
+        ((const struct sched_param *) &cbs_params))) != 0){
+        perror("SET SCHED FAILED");
+    }
 
     //check cs->ret after it gets run and reschedule if needbe
     cs->ret = cs->entry(cs->arg);
@@ -93,7 +96,6 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     struct cbs_struct *cs;
 
     *thread = NULL;
-
     cs = malloc(sizeof(*cs));
     if (cs == NULL)
 	   return -1;
@@ -107,6 +109,7 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();
 
+    *thread = cs;
     return 0;
 }
 

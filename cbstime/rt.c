@@ -50,10 +50,10 @@ int main(int argc, char **argv)
 	    cpu, period.tv_sec, period.tv_usec, mode == CBS_RT);
 
     if (cbs_create(&ct, mode, cpu, &period, &work, NULL) != 0)
-	return 1;
+	   return 1;
     
     if (cbs_join(&ct, NULL) != 0)
-	return 1;
+	   return 1;
 
     return 0;
 }

@@ -3730,7 +3730,6 @@ recheck:
 				policy != SCHED_IDLE && policy != SCHED_CBS)
 			return -EINVAL;
 	}
-
 	/*
 	 * Valid priorities for SCHED_FIFO and SCHED_RR are
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
@@ -3740,9 +3739,11 @@ recheck:
 	    (p->mm && param->sched_priority > MAX_USER_RT_PRIO-1) ||
 	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1))
 		return -EINVAL;
+
+	printk("checking policy %i\n", param->sched_priority);	
 	if (rt_policy(policy) != (param->sched_priority != 0))
 		return -EINVAL;
-
+	printk("policy good");
 	/*
 	 * Allow unprivileged RT tasks to decrease priority:
 	 */
@@ -3789,7 +3790,7 @@ recheck:
 	 * make sure no PI-waiters arrive (or leave) while we are
 	 * changing the priority of the task:
 	 *
-	 * To be able to change p->policy safely, the appropriate
+	 * To be able to change p->policy safely, the appropriat	e
 	 * runqueue lock must be held.
 	 */
 	rq = task_rq_lock(p, &flags);
@@ -3797,10 +3798,12 @@ recheck:
 	/*
 	 * Changing the policy of the stop threads its a very bad idea
 	 */
+
 	if (p == rq->stop) {
 		task_rq_unlock(rq, p, &flags);
 		return -EINVAL;
 	}
+	printk("thread not stopped");
 
 	/*
 	 * If not changing anything there's no need to proceed further:
@@ -3914,6 +3917,7 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	rcu_read_lock();
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
+	printk("do_sched_setscheduler priority: %i\n", param->sched_priority);
 	if (p != NULL)
 		retval = sched_setscheduler(p, policy, &lparam);
 	rcu_read_unlock();
@@ -3934,6 +3938,7 @@ SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy,
 	if (policy < 0)
 		return -EINVAL;
 
+	printk("syscall set scheduler %i\n", param->sched_priority);
 	return do_sched_setscheduler(pid, policy, param);
 }
 

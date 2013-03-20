@@ -45,6 +45,17 @@ struct cbs_struct
     int ret;
 };
 
+struct new_sched_param {
+    /*CBS SCHEDULER STUFF*/
+    unsigned long long deadline;
+    unsigned long long curr_budget;
+    unsigned long long init_budget;
+    double utilization;
+    unsigned long long period;
+    int type;
+    int sched_priority;
+};
+
 static void *pthread_wrapper(void *arg)
 {
     //have to convert args to a cbs_struct
@@ -67,18 +78,17 @@ static void *pthread_wrapper(void *arg)
             its.it_value.tv_nsec = cs->period.tv_usec * 1000;
     }
 
-    struct _sched_param cbs_params = {
-       // .sched_priority = 0, //we don't use it
+    struct new_sched_param cbs_params = {
        .deadline = 0, //set by scheduler
        .curr_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
        .init_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
        .period = ((cs->period.tv_sec*MICRO) + cs->period.tv_usec) * 1000, //value is in nanoseconds
        .utilization = mi_frac/(cs->period.tv_sec + (cs->period.tv_usec/MICRO)), //set by scheduler, initial budget/period
        .type = cs->type, 
+       .sched_priority = 1, //either change <46>kernel/sched/sched.h or do this
     };
 
-    fprintf(stderr, "Setting Schedule\n");
-    if((sched_setscheduler(\
+        if((sched_setscheduler(\
         syscall(__NR_gettid), \
         SCHED_CBS, \
         ((struct sched_param *) &cbs_params))) != 0){

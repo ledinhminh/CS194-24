@@ -77,10 +77,11 @@ static void *pthread_wrapper(void *arg)
        .type = cs->type, 
     };
 
+    fprintf(stderr, "Setting Schedule\n");
     if((sched_setscheduler(\
         syscall(__NR_gettid), \
         SCHED_CBS, \
-        ((const struct sched_param *) &cbs_params))) != 0){
+        ((struct sched_param *) &cbs_params))) != 0){
         perror("SET SCHED FAILED");
     }
 

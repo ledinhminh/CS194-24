@@ -61,28 +61,6 @@ static void *pthread_wrapper(void *arg)
     struct cbs_struct *cs;
     cs = arg;
 
-    //check cs->ret after it gets run and reschedule if needbe
-    cs->ret = cs->entry(cs->arg);
-    return NULL;
-}
-
-int cbs_create(cbs_t *thread, enum cbs_type type,
-	       size_t cpu, struct timeval *period,
-               int (*entry)(void *), void *arg)
-{
-    struct cbs_struct *cs;
-
-    *thread = NULL;
-    cs = malloc(sizeof(*cs));
-    if (cs == NULL)
-	   return -1;
-
-    cs->entry = entry;
-    cs->arg = arg;
-    cs->period = *period;
-    cs->cpu = cpu;
-    cs->type = type;
-
     /*gotta convert BOGOMIPs to secs and nanos*/
     struct itimerspec its;
     double mi_frac = cs->cpu / BOGO_MIPS;
@@ -114,6 +92,27 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     if(pthread_setschedparam(pthread_self(), SCHED_CBS, (struct sched_param *) &cbs_params) != 0){
         perror("SET SCHED FAILED");
     }
+    //check cs->ret after it gets run and reschedule if needbe
+    cs->ret = cs->entry(cs->arg);
+    return NULL;
+}
+
+int cbs_create(cbs_t *thread, enum cbs_type type,
+	       size_t cpu, struct timeval *period,
+               int (*entry)(void *), void *arg)
+{
+    struct cbs_struct *cs;
+
+    *thread = NULL;
+    cs = malloc(sizeof(*cs));
+    if (cs == NULL)
+	   return -1;
+
+    cs->entry = entry;
+    cs->arg = arg;
+    cs->period = *period;
+    cs->cpu = cpu;
+    cs->type = type;
 
     if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();

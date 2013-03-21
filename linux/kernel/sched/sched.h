@@ -377,7 +377,7 @@ struct rq {
 
 	struct cfs_rq cfs;
 	struct rt_rq rt;
-  	struct cbs_rq cbs;
+  struct cbs_rq cbs;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this cpu: */

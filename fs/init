@@ -7,6 +7,10 @@ mount -t devpts devpts /dev/pts
 ifconfig eth0 up
 udhcpc eth0 -f -q -r 10.0.2.15 -s /bin/udhcp-script > /dev/null
 
+# Mount debug
+mkdir /debug
+mount -t debugfs nodev /debug
+
 # Inform the tester that we've booted
 sleep 1s
 echo "[cs194-24] init running"

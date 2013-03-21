@@ -3925,8 +3925,8 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	p = find_process_by_pid(pid);
 	printk("do_sched_setscheduler sched_param size %i\n", sizeof(struct sched_param));
 	printk("do_sched_setscheduler priority: %i\n", lparam.sched_priority);
-	printk("do_sched_setscheduler period: %i\n", lparam.period);
-	printk("do_sched_setscheduler type: %i\n", lparam.type);
+	printk("do_sched_setscheduler period: %li\n", lparam.period);
+	printk("do_sched_setscheduler type: %li\n", lparam.type);
 	printk("do_sched_setscheduler policy: %i\n", policy);
 	if (p != NULL)
 		retval = sched_setscheduler(p, policy, &lparam);

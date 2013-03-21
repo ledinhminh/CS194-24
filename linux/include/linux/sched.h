@@ -1181,7 +1181,6 @@ struct sched_rt_entity {
 #endif
 };
 
-
 struct sched_cbs_entity {
 
 	//RB stuff in here

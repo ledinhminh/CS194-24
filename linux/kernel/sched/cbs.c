@@ -37,16 +37,30 @@ static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 
 }
 
+static void set_curr_task_cbs(struct rq *rq)
+{
+
+}
+
+static void switched_to_cbs(struct rq *rq, struct task_struct *p)
+{
+
+}
+
 void init_cbs_rq(struct cbs_rq *cbs_rq)
 {
 	cbs_rq->tasks_timeline = RB_ROOT;
 }
+
+
 
 const struct sched_class cbs_sched_class = {
 
 	.next = &rt_sched_class,
 	.enqueue_task = enqueue_task_cbs,
 	.dequeue_task = dequeue_task_cbs,
+	.set_curr_task = set_curr_task_cbs,
+	.switched_to = switched_to_cbs,
 
 	/*GH_TODO: Do we need*/
 	.check_preempt_curr = check_preempt_curr_cbs,

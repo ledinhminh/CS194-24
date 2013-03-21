@@ -5,7 +5,13 @@
 
 
 struct sched_param {
-	int sched_priority;
+    int sched_priority;
+    unsigned long long deadline;
+    unsigned long long curr_budget;
+    unsigned long long init_budget;
+    double utilization;
+    unsigned long long period;
+    int type;
 };
 
 #include <asm/param.h>	/* for HZ */

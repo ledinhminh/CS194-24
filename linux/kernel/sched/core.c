@@ -3681,6 +3681,7 @@ __setscheduler(struct rq *rq, struct task_struct *p, int policy, int prio)
 	/* we are holding p->pi_lock already */
 	p->prio = rt_mutex_getprio(p);
 	if (policy == SCHED_CBS){
+		printk("__setscheduler set cbs\n");
 		p->sched_class = &cbs_sched_class;
 	} else if (rt_prio(p->prio))
 		p->sched_class = &rt_sched_class;
@@ -3740,10 +3741,8 @@ recheck:
 	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1))
 		return -EINVAL;
 
-	printk("checking policy %i\n", param->sched_priority);	
 	if (rt_policy(policy) != (param->sched_priority != 0))
 		return -EINVAL;
-	printk("policy good");
 	/*
 	 * Allow unprivileged RT tasks to decrease priority:
 	 */
@@ -3803,7 +3802,6 @@ recheck:
 		task_rq_unlock(rq, p, &flags);
 		return -EINVAL;
 	}
-	printk("thread not stopped");
 
 	/*
 	 * If not changing anything there's no need to proceed further:
@@ -3829,6 +3827,7 @@ recheck:
 	}
 #endif
 
+	printk("rechecking stage \n");
 	/* recheck policy now with rq lock held */
 	if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
 		policy = oldpolicy = -1;
@@ -3847,6 +3846,7 @@ recheck:
 	oldprio = p->prio;
 	prev_class = p->sched_class;
 
+	printk("populating\n");
 	if (policy == SCHED_CBS) {
 		p->cbs.deadline = param->deadline;
 		p->cbs.curr_budget = param->curr_budget;
@@ -3855,18 +3855,24 @@ recheck:
 		p->cbs.type = param->type;
 		p->cbs.period = param->period;
 	}
+
+	printk("scheduling\n");
 	__setscheduler(rq, p, policy, param->sched_priority);
 
+	printk("running check\n");
 	if (running)
 		p->sched_class->set_curr_task(rq);
+	printk("queuing check\n");
 	if (on_rq)
 		enqueue_task(rq, p, 0);
 
+	printk("check class changed\n");
 	check_class_changed(rq, p, prev_class, oldprio);
+	printk("unlocking rq\n");
 	task_rq_unlock(rq, p, &flags);
-
+	printk("adjustint mutex\n");
 	rt_mutex_adjust_pi(p);
-
+	printk("returning from setSched...");
 	return 0;
 }
 
@@ -3917,7 +3923,11 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	rcu_read_lock();
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
-	printk("do_sched_setscheduler priority: %i\n", param->sched_priority);
+	printk("do_sched_setscheduler sched_param size %i\n", sizeof(struct sched_param));
+	printk("do_sched_setscheduler priority: %i\n", lparam.sched_priority);
+	printk("do_sched_setscheduler period: %i\n", lparam.period);
+	printk("do_sched_setscheduler type: %i\n", lparam.type);
+	printk("do_sched_setscheduler policy: %i\n", policy);
 	if (p != NULL)
 		retval = sched_setscheduler(p, policy, &lparam);
 	rcu_read_unlock();
@@ -3938,7 +3948,6 @@ SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy,
 	if (policy < 0)
 		return -EINVAL;
 
-	printk("syscall set scheduler %i\n", param->sched_priority);
 	return do_sched_setscheduler(pid, policy, param);
 }
 

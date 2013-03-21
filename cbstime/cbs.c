@@ -46,14 +46,13 @@ struct cbs_struct
 };
 
 struct new_sched_param {
-    /*CBS SCHEDULER STUFF*/
+    int sched_priority;
     unsigned long long deadline;
     unsigned long long curr_budget;
     unsigned long long init_budget;
     double utilization;
     unsigned long long period;
     int type;
-    int sched_priority;
 };
 
 static void *pthread_wrapper(void *arg)
@@ -61,6 +60,28 @@ static void *pthread_wrapper(void *arg)
     //have to convert args to a cbs_struct
     struct cbs_struct *cs;
     cs = arg;
+
+    //check cs->ret after it gets run and reschedule if needbe
+    cs->ret = cs->entry(cs->arg);
+    return NULL;
+}
+
+int cbs_create(cbs_t *thread, enum cbs_type type,
+	       size_t cpu, struct timeval *period,
+               int (*entry)(void *), void *arg)
+{
+    struct cbs_struct *cs;
+
+    *thread = NULL;
+    cs = malloc(sizeof(*cs));
+    if (cs == NULL)
+	   return -1;
+
+    cs->entry = entry;
+    cs->arg = arg;
+    cs->period = *period;
+    cs->cpu = cpu;
+    cs->type = type;
 
     /*gotta convert BOGOMIPs to secs and nanos*/
     struct itimerspec its;
@@ -88,34 +109,11 @@ static void *pthread_wrapper(void *arg)
        .sched_priority = 1, //either change <46>kernel/sched/sched.h or do this
     };
 
-        if((sched_setscheduler(\
-        syscall(__NR_gettid), \
-        SCHED_CBS, \
-        ((struct sched_param *) &cbs_params))) != 0){
+    fprintf(stderr, "before set: %d\n", cbs_params.sched_priority);
+    fprintf(stderr, "new_sched_param size %ld\n", sizeof(struct new_sched_param));
+    if(pthread_setschedparam(pthread_self(), SCHED_CBS, (struct sched_param *) &cbs_params) != 0){
         perror("SET SCHED FAILED");
     }
-
-    //check cs->ret after it gets run and reschedule if needbe
-    cs->ret = cs->entry(cs->arg);
-    return NULL;
-}
-
-int cbs_create(cbs_t *thread, enum cbs_type type,
-	       size_t cpu, struct timeval *period,
-               int (*entry)(void *), void *arg)
-{
-    struct cbs_struct *cs;
-
-    *thread = NULL;
-    cs = malloc(sizeof(*cs));
-    if (cs == NULL)
-	   return -1;
-
-    cs->entry = entry;
-    cs->arg = arg;
-    cs->period = *period;
-    cs->cpu = cpu;
-    cs->type = type;
 
     if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();

@@ -4,37 +4,61 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <asm/uaccess.h>
 #include <linux/proc_fs.h>
-#include <linux/sched.h>
 
+#define MAX_PROC_SIZE 100
 
-int read_snap(char *buf,char **start,off_t offset,int count,int *eof,void *data ) 
+static char proc_data[MAX_PROC_SIZE];
+
+static struct proc_dir_entry *proc_write_entry;
+static struct proc_dir_entry *proc_parent;
+
+int read_proc(char *buf,char **start,off_t offset,int count,int *eof,void *data )
 {
-	int len=0;
+    int len=0;
+    len = sprintf(buf,"\n %s\n ",proc_data);
 
-	len  += sprintf(buf+len, "Hello world");
-
-	   
-	return len;
+    return len;
 }
 
-void create_new_snap_entry() 
+int write_proc(struct file *file,const char *buf,int count,void *data )
 {
-	create_proc_read_entry("test",0,NULL,read_snap,NULL);
+
+    if(count > MAX_PROC_SIZE)
+        count = MAX_PROC_SIZE;
+    if(copy_from_user(proc_data, buf, count))
+        return -EFAULT;
+
+    return count;
+}
+
+void create_new_snapshot_proc_entry()
+{
+    proc_parent = proc_mkdir("snapshot",NULL);
+    if(!proc_parent)
+    {
+        printk(KERN_INFO "Error creating proc entry");
+        return -ENOMEM;
+    }
+
+    proc_write_entry = create_proc_entry("0",0666,proc_parent);
+    if(!proc_write_entry)
+    {
+        printk(KERN_INFO "Error creating proc entry");
+        return -ENOMEM;
+    }
+
+    proc_write_entry->read_proc = read_proc;
+    proc_write_entry->write_proc = write_proc;
 
 }
 
 
-int snap_init (void) {
-	int ret;
 
-	create_new_snap_entry();
-	return 0;
+int proc_init (void) {
+    create_new_snapshot_proc_entry();
+    return 0;
 }
 
-void snap_cleanup(void) {
-	remove_proc_entry("test",NULL);
-}
-
-module_init(snap_init);
-module_exit(snap_cleanup);
+module_init(proc_init);

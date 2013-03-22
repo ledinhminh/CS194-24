@@ -868,4 +868,19 @@ asmlinkage long sys_process_vm_writev(pid_t pid,
 
 asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
 			 unsigned long idx1, unsigned long idx2);
+
+/*SNAPSHOT STUFF*/
+enum snap_event
+{
+    SNAP_EVENT_CBS_SCHED,
+};
+
+enum snap_trig
+{
+    SNAP_TRIG_BEDGE,
+    SNAP_TRIG_AEDGE,
+};
+
+asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
+	     enum snap_trig __user *triggers, size_t n);
 #endif

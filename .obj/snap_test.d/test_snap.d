@@ -11,7 +11,10 @@
  /usr/include/bits/environments.h /usr/include/bits/confname.h \
  /usr/include/getopt.h /usr/include/sys/syscall.h \
  /usr/include/asm/unistd.h /usr/include/asm/unistd_64.h \
- /usr/include/bits/syscall.h
+ /usr/include/bits/syscall.h snap_test/snapshot.h /usr/include/errno.h \
+ /usr/include/bits/errno.h linux/include/linux/errno.h \
+ linux/include/uapi/linux/errno.h /usr/include/asm/errno.h \
+ /usr/include/asm-generic/errno.h /usr/include/asm-generic/errno-base.h
 
 /usr/include/stdio.h:
 
@@ -62,3 +65,19 @@
 /usr/include/asm/unistd_64.h:
 
 /usr/include/bits/syscall.h:
+
+snap_test/snapshot.h:
+
+/usr/include/errno.h:
+
+/usr/include/bits/errno.h:
+
+linux/include/linux/errno.h:
+
+linux/include/uapi/linux/errno.h:
+
+/usr/include/asm/errno.h:
+
+/usr/include/asm-generic/errno.h:
+
+/usr/include/asm-generic/errno-base.h:

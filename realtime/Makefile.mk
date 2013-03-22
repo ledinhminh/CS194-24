@@ -36,3 +36,15 @@ all: .obj/realtimectl
 .obj/realtimectl.d/%.o : realtime/%.c $(REALTIMECTL_HDR)
 	mkdir -p `dirname $@`
 	gcc -g -c -o $@ $(REALTIMECTL_FLAGS) $(CFLAGS) -MD -MP -MF ${@:.o=.d} $<
+
+linux: linux/fs/proc/cbs_proc.c
+linux/fs/proc/cbs_proc.c: realtime/cbs_proc.c
+	cp "$<" "$@"
+
+linux: linux/fs/proc/cbs_proc.h
+linux/fs/proc/cbs_proc.h: realtime/cbs_proc.h
+	cp "$<" "$@"
+
+linux: linux/fs/proc/cbs_proc_impl.c
+linux/fs/proc/cbs_proc_impl.c: realtime/cbs_proc_impl.c
+	cp "$<" "$@"

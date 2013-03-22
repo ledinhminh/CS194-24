@@ -4,7 +4,7 @@ SNAP_TEST_HDR := $(wildcard ./snap_test/*.h)
 SNAP_TEST_OBJ := $(SNAP_TEST_SRC:%.c=%.o)
 SNAP_TEST_OBJ := $(SNAP_TEST_OBJ:./snap_test/%=./.obj/snap_test.d/%)
 SNAP_TEST_DEP := $(SNAP_TEST_OBJ:%.o:%.d)
-SNAP_TEST_FLAGS := -fms-extensions
+SNAP_TEST_FLAGS := -fms-extensions -isystem linux/include
 
 -include $(SNAP_TEST_DEP)
 

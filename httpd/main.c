@@ -81,7 +81,7 @@ void* start_thread(void *args)
 	server = http_server_new((palloc_env*) targ->thread_env, PORT);
 	server->fd = socket_fd;
 
-    DEBUG("socket_fd=%d\n", socket_fd);
+  DEBUG("socket_fd=%d\n", socket_fd);
 
 	if (server == NULL)
         DEBUG("cannot allocate server: %s\n", strerror(errno));
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
 {
 	palloc_env env;
 
-    struct server_thread_args thread_args;
+  struct server_thread_args thread_args;
 	int socket_fd;
 	int epoll_fd;
 	int proc_num;
@@ -378,7 +378,9 @@ int main(int argc, char **argv)
 	threads = palloc_array(env, pthread_t, proc_num);
 	for (i = 0; i < proc_num; i++){
 		pthread_t thread;
-		pthread_create(&thread, NULL, start_thread, (void*) &thread_args);
+    struct server_thread_args* t = malloc(sizeof(struct server_thread_args));
+    *t = thread_args;
+		pthread_create(&thread, NULL, start_thread, (void*) t);
 		threads[i] = thread;
 	}
 

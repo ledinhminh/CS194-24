@@ -34,12 +34,20 @@ static inline int on_cbs_rq(struct sched_cbs_entity *cbs_se)
 	return !RB_EMPTY_NODE(&cbs_se->run_node);
 }
 
-/*Called whenever task enters in a runnable state*/
 static void enqueue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 {
+    /* In some other schedulers (rt, that-which-must-not-be-named), you might see
+     * a queue for "pushable tasks". That is a mechanism for migrating tasks from
+     * runqueue to runqueue when one is overloaded. For now, we will not implement
+     * this.
+     */
+     
     struct sched_cbs_entity* cbs_se = &p->cbs;
     
-    printk("cbs: enqueue_task: rq=%pr, p=%pr\n", rq, p);
+    printk("cbs: enqueue_task: enqueueing '%s' on %d; flags=%d\n", p->comm, rq->cpu, flags);
+    printk("cbs: enqueue_task: deadline=%llu, init_budget=%llu\n", cbs_se->deadline, cbs_se->init_budget);
+    
+    __enqueue_entity_cbs(&rq->cbs, &p->cbs);
     
     // Why do we need to do this? No one knows.
     inc_nr_running(rq);
@@ -47,22 +55,36 @@ static void enqueue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 
 static void dequeue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 {
-    printk("cbs: dequeue_task: rq=%pr, p=%pr\n", rq, p);
+    printk("cbs: dequeue_task: dequeueing '%s' on %d, flags=%d\n", p->comm, rq->cpu, flags);
+    
+    __dequeue_entity_cbs(&rq->cbs, &p->cbs);
     
     dec_nr_running(rq);
 }
 
 static struct task_struct *pick_next_task_cbs(struct rq *rq)
 {
-    // trace_printk("cbs: pick_next_task called\n");
-    return NULL;
+    // printk("cbs: pick_next_task: rq=%pr\n", rq);
+    trace_printk("called\n");
+
     struct sched_cbs_entity* cbs_se = __pick_first_entity_cbs(&rq->cbs);
+
+    // In that-which-must-not-be-named, there is a pre-check for the nr_running
+    // of the **_rq. I guess this is the same.
+    
+    if (NULL == cbs_se) {
+        // printk("cbs: skipped...\n");
+        return NULL;
+    }
+    
+
     struct task_struct* p = container_of(cbs_se, struct task_struct, cbs);
 
-    // Set the start time to now.
+    printk("cbs: pick_next_task: not skipped, picking '%s'\n", p->comm);
+    
+    // Set the start time to now
     p->se.exec_start = rq->clock_task;
-    return NULL;
-    // return p;
+    return p;
 }
 
 /* What does put_prev_task do?
@@ -83,20 +105,8 @@ static struct task_struct *pick_next_task_cbs(struct rq *rq)
  */
 static void put_prev_task_cbs(struct rq* rq, struct task_struct* p)
 {
+    printk("cbs: put_prev_task: letting go of '%s' from %d\n", p->comm, rq->cpu);
     update_curr_cbs(rq);
-    
-    /* It's entirely possible that the previous task isn't on CBS, in which case
-     * we should make no attempt to place it on our runqueue again. 
-     * No, I don't know what p->nr_cpus_allowed is either. Ask rt.c.
-     */
-    if (on_cbs_rq(&p->cbs) && p->nr_cpus_allowed > 1) {
-        /* TODO: What is the difference between a rt_entity and a pushable_task?
-         * And why does it have to task_current in enqueue_task_rt to enqueue
-         * pushable task, while we just do it here? Questions, questions...
-         */
-        __enqueue_entity_cbs(&rq->cbs, &p->cbs);
-    }
-    
 }
 
 static void check_preempt_curr_cbs(struct rq *rq, struct task_struct *p, int flags)
@@ -106,7 +116,14 @@ static void check_preempt_curr_cbs(struct rq *rq, struct task_struct *p, int fla
 
 static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 {
-
+    // So simple!
+    p->cbs.curr_budget--;
+    if (0 == p->cbs.curr_budget) {
+        printk("cbs: budget deficit!\n");
+    }
+    if (0 == p->cbs.curr_budget % 10) {
+        printk("cbs: task_tick: budget now %lu\n", p->cbs.curr_budget);
+    }
 }
 
 static void set_curr_task_cbs(struct rq *rq)

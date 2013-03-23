@@ -1,25 +1,16 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/syscalls.h>
-
+#include <../../../fs/proc/cbs_proc.h> //need for cbs_proc_t
 #define CBS_MAX_HISTORY 64
 #define SNAP_MAX_TRIGGERS 8
-
-enum cbs_state
-{
-    CBS_STATE_HISTORY,   /* The result of a historical run */
-    CBS_STATE_RUNNING,   /* The currently running process */
-    CBS_STATE_READY,     /* Ready to run, in a queue somewhere */
-    CBS_STATE_BLOCKED,   /* Unable to run for any reason */
-    CBS_STATE_INVALID,   /* The request was not for a valid process */
-};
 
 struct snap_bucket {
 	enum snap_event s_event;
 	enum snap_trig s_trig;
 	int device;
 	int bucket_depth;
-	//and some pointer to a list of cbs_proc_t
+	struct cbs_proc * history;
 };
 
 struct snap_buffer {
@@ -27,7 +18,20 @@ struct snap_buffer {
 	int num_buckets;
 };
 
+struct cbs_proc {
+	//TODO: put pointer to the rq in here
+	long pid;
+	cbs_time_t creation_time;
+	cbs_time_t start_time;
+	cbs_time_t end_time; //initialize to -1
+	cbs_time_t period;
+	cbs_time_t compute_time;
+	enum cbs_state state;
+	int valid; //1 if it is, 0 if its not
+	struct cbs_proc* next; //pointer to next struct in the list
+}; 
 
+//mutex for EVERYTHING!!!
 DEFINE_MUTEX(lock);
 int running;
 
@@ -40,6 +44,75 @@ struct snap_buffer buffer = {
 	.num_buckets = 0,
 };
 
+//adds a cbs_proc_t to the bucket
+int add_cbs_proc(int bucket_num, struct cbs_proc p){
+
+	mutex_lock(&lock);
+	//make sure bucket exists
+	if(bucket_num >= buffer.num_buckets)
+		return -1;
+
+	//make sure bucket isn't full
+	struct snap_bucket bucket = buffer.buckets[bucket_num];
+	if(bucket.bucket_depth >= CBS_MAX_HISTORY)
+		return -1;
+
+	//add the proc to the end of the list
+	int i;
+	struct cbs_proc* proc_entry = bucket.history;
+	for(i = 0; i < bucket.bucket_depth - 1; i++){
+		proc_entry = proc_entry->next;		
+	}
+	if(proc_entry->next != NULL){
+		//already exists and invalid history entry, just overwrite it
+		proc_entry = proc_entry->next;
+		proc_entry->pid = p.pid;
+		proc_entry->creation_time = p.creation_time;
+		proc_entry->start_time = p.start_time;
+		proc_entry->end_time = p.end_time;
+		proc_entry->period = p.period;
+		proc_entry->compute_time = p.compute_time;
+		proc_entry->state = p.state;
+		proc_entry->valid = 1;
+	} else {
+		//no history entry there, gotta do a kmalloc...
+		struct cbs_proc *copy = kmalloc(sizeof(struct cbs_proc), GFP_KERNEL);
+		copy->pid = p.pid;
+		copy->creation_time = p.creation_time;
+		copy->start_time = p.start_time;
+		copy->end_time = p.end_time;
+		copy->period = p.period;
+		copy->compute_time = p.compute_time;
+		copy->state = p.state;
+		copy->valid = 1;
+		copy->next = NULL;
+	}
+
+	//gotta remember to free that lock
+	mutex_unlock(&lock);
+	return 0;
+}
+
+void invalidate_buffer(void){
+	int i;
+	for(i = 0; i < SNAP_MAX_TRIGGERS; i++){
+		//go through each bucket and invalidate the history
+		struct snap_bucket bucket = bucket_list[i];
+		struct cbs_proc *proc_entry = bucket.history;
+		
+		if (proc_entry == NULL)
+			return;
+
+		while(proc_entry->next != NULL){
+			proc_entry->valid = 0;
+			proc_entry = proc_entry->next;
+		}
+
+		//set the bucket's depth (history length) to zero
+		bucket.bucket_depth = 0;
+	}
+}
+
 asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 	     enum snap_trig __user *triggers, size_t n)
 {
@@ -50,7 +123,7 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 		return EAGAIN;
 	} else {
 		if(mutex_trylock(&lock)){
-			running = 1;
+			running = 0;//TODO: FIGURE OUT HOW THIS WILL WORK
 		} else {
 			//someone else has the lock
 			//just say EAGAIN to be safe
@@ -77,9 +150,13 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 		return -EFAULT;
 	}
 
+	//invalidate the buffer
+	invalidate_buffer();
+
 	//put in size into buffer
 	buffer.num_buckets = n;
-	//SET STUFF IN BUFFERS
+
+	//SET STUFF IN BUCKETS
 	for (index = 0; index < n; index++){
 		//set the event of a bucket
 		buffer.buckets[index].s_event = kern_events[index];
@@ -102,11 +179,7 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 		//set the device of a bucket
 		buffer.buckets[index].device = kern_device[index];
 		printk("Snap for device %i\n",kern_device[index]);
-
-		//reset depth of a bucket
-		buffer.buckets[index].bucket_depth = 0;
 	}
-
 
 	//don't forget to unlock
 	mutex_unlock(&lock);

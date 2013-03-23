@@ -9,6 +9,8 @@
  */
 #define CBS_MAX_HISTORY 64
 
+
+int cbs_snap(char *buf);
 /*
  * An opaque type that represents a CBS task.
  */

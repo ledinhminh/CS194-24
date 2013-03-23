@@ -1,7 +1,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
-#include<linux/sched.h>
+#include <linux/sched.h>
 
 
 int read_proc(char *buf,char **start,off_t offset,int count,int *eof,void *data ) 

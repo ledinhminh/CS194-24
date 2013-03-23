@@ -3,17 +3,12 @@
 
 #include <uapi/linux/sched.h>
 
-
 struct sched_param {
-	int sched_priority;
-
-	/*CBS SCHEDULER STUFF*/
-	unsigned long long deadline;
-	unsigned long long curr_budget;
-	unsigned long long init_budget;
-	double utilization;
-	unsigned long long period;
-	int type;
+    int sched_priority;
+    unsigned long long deadline;
+    unsigned long long cpu;
+    unsigned long long period;
+    int type;
 };
 
 #include <asm/param.h>	/* for HZ */
@@ -1182,17 +1177,16 @@ struct sched_rt_entity {
 };
 
 struct sched_cbs_entity {
-
-	//RB stuff in here
 	struct rb_node run_node;
 
 	unsigned long long deadline;
 	unsigned long long curr_budget;
 	unsigned long long init_budget;
-	double utilization;
+	double bandwidth;
 	unsigned long long period;
 	int type;
 };
+
 /*
  * default timeslice is 100 msecs (used only for SCHED_RR tasks).
  * Timeslices get refilled after they expire.

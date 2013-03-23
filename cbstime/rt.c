@@ -6,7 +6,7 @@
 #include <stdlib.h>
 
 volatile int global_work = 0;
-long long int loop_count = 100 * 1000; 
+long long int loop_count = 100 * 10000; 
 
 static int work(void *arg __attribute__((unused)))
 {

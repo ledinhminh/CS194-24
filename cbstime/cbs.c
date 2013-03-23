@@ -48,9 +48,7 @@ struct cbs_struct
 struct new_sched_param {
     int sched_priority;
     unsigned long long deadline;
-    unsigned long long curr_budget;
-    unsigned long long init_budget;
-    double utilization;
+    unsigned long long cpu;
     unsigned long long period;
     int type;
 };
@@ -61,37 +59,6 @@ static void *pthread_wrapper(void *arg)
     struct cbs_struct *cs;
     cs = arg;
 
-    /*gotta convert BOGOMIPs to secs and nanos*/
-    struct itimerspec its;
-    double mi_frac = cs->cpu / BOGO_MIPS;
-
-    memset(&its, 0, sizeof(its)); //zero it out
-    if (cs->type == CBS_RT)
-    {
-        its.it_value.tv_sec = mi_frac;
-        its.it_value.tv_nsec = (long)(mi_frac * NANO) % NANO;
-
-        if (its.it_value.tv_sec > cs->period.tv_sec) //if budget > period
-            its.it_value.tv_sec = cs->period.tv_sec; //make budget = period
-        if (its.it_value.tv_nsec > cs->period.tv_usec * 1000) //same for frac part
-            its.it_value.tv_nsec = cs->period.tv_usec * 1000;
-    }
-
-    struct new_sched_param cbs_params = {
-       .deadline = 0, //set by scheduler
-       .curr_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
-       .init_budget = (its.it_value.tv_sec*NANO) + its.it_value.tv_nsec, //value is in nanoseconds
-       .period = ((cs->period.tv_sec*MICRO) + cs->period.tv_usec) * 1000, //value is in nanoseconds
-       .utilization = mi_frac/(cs->period.tv_sec + (cs->period.tv_usec/MICRO)), //set by scheduler, initial budget/period
-       .type = cs->type, 
-       .sched_priority = 1, //either change <46>kernel/sched/sched.h or do this
-    };
-
-    fprintf(stderr, "before set: %d\n", cbs_params.sched_priority);
-    fprintf(stderr, "new_sched_param size %ld\n", sizeof(struct new_sched_param));
-    if(pthread_setschedparam(pthread_self(), SCHED_CBS, (struct sched_param *) &cbs_params) != 0){
-        perror("SET SCHED FAILED");
-    }
     //check cs->ret after it gets run and reschedule if needbe
     cs->ret = cs->entry(cs->arg);
     return NULL;
@@ -113,9 +80,36 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     cs->period = *period;
     cs->cpu = cpu;
     cs->type = type;
+    
+
+     
 
     if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();
+        
+    /* Note: I don't understand why BOGO_MIPS is being set at build time, when 
+     * the BogoMIPS in the VM is probably slower. 
+     * Piazza already claims that the scheduler in kernel land ought to--
+     * Hell, this calculation ought to be done in kernel space.
+     * Moving it...
+     */
+    
+    struct new_sched_param cbs_params = {
+       .sched_priority = 1, // Either change <46>kernel/sched/sched.h or do this
+       .cpu = cs->cpu,
+       .deadline = 0, // Set by scheduler
+       .period = ((cs->period.tv_sec * MICRO) + cs->period.tv_usec) * 1000, // Value is in nanoseconds
+       .type = cs->type, 
+    };
+
+    fprintf(stderr, "before set: %d\n", cbs_params.sched_priority);
+    fprintf(stderr, "new_sched_param size %ld\n", sizeof(struct new_sched_param));
+    
+    int rv = pthread_setschedparam(cs->thread, SCHED_CBS, (struct sched_param *) &cbs_params);
+    if(rv != 0){
+        printf("rv=%d\n", rv);
+        perror("Failed to set scheduler\n");
+    }
 
     *thread = cs;
     return 0;

@@ -35,7 +35,7 @@ enum cbs_state
     CBS_STATE_RUNNING,   /* The currently running process */
     CBS_STATE_READY,     /* Ready to run, in a queue somewhere */
     CBS_STATE_BLOCKED,   /* Unable to run for any reason */
-    CBS_STATE_INVALID,   /* The request was not far a valid process */
+    CBS_STATE_INVALID,   /* The request was not for a valid process */
 };
 
 /*

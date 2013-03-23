@@ -3680,8 +3680,7 @@ __setscheduler(struct rq *rq, struct task_struct *p, int policy, int prio)
 	p->normal_prio = normal_prio(p);
 	/* we are holding p->pi_lock already */
 	p->prio = rt_mutex_getprio(p);
-	if (policy == SCHED_CBS){
-		printk("__setscheduler set cbs\n");
+	if (policy == SCHED_CBS) {
 		p->sched_class = &cbs_sched_class;
 	} else if (rt_prio(p->prio))
 		p->sched_class = &rt_sched_class;
@@ -3827,7 +3826,6 @@ recheck:
 	}
 #endif
 
-	printk("rechecking stage \n");
 	/* recheck policy now with rq lock held */
 	if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
 		policy = oldpolicy = -1;
@@ -3846,33 +3844,30 @@ recheck:
 	oldprio = p->prio;
 	prev_class = p->sched_class;
 
-	printk("populating\n");
+    // Note: some important calculations are being done here!
 	if (policy == SCHED_CBS) {
+        // Trust cpu_info for our bogomips. Who knows how loops_per_jiffy has been adulterated since boot!
+        unsigned long long bogomips_whole = boot_cpu_data.loops_per_jiffy/(500000/HZ);
+        unsigned long long budget = param->cpu * HZ / bogomips_whole;
+
+        printk("cbs: bogomips=%llu, budget=%llu ticks\n", bogomips_whole, budget);
 		p->cbs.deadline = param->deadline;
-		p->cbs.curr_budget = param->curr_budget;
-		p->cbs.init_budget = param->init_budget;
-		p->cbs.utilization = param->utilization;
+		p->cbs.curr_budget = budget;
+		p->cbs.init_budget = budget;
 		p->cbs.type = param->type;
 		p->cbs.period = param->period;
 	}
 
-	printk("scheduling\n");
 	__setscheduler(rq, p, policy, param->sched_priority);
 
-	printk("running check\n");
 	if (running)
 		p->sched_class->set_curr_task(rq);
-	printk("queuing check\n");
 	if (on_rq)
 		enqueue_task(rq, p, 0);
 
-	printk("check class changed\n");
 	check_class_changed(rq, p, prev_class, oldprio);
-	printk("unlocking rq\n");
 	task_rq_unlock(rq, p, &flags);
-	printk("adjustint mutex\n");
 	rt_mutex_adjust_pi(p);
-	printk("returning from setSched...");
 	return 0;
 }
 
@@ -3914,20 +3909,25 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	struct sched_param lparam;
 	struct task_struct *p;
 	int retval;
+    
+    printk("do_sched_setscheduler...\n");
 
 	if (!param || pid < 0)
 		return -EINVAL;
 	if (copy_from_user(&lparam, param, sizeof(struct sched_param)))
 		return -EFAULT;
 
+    printk("sched_param: %pr\n", lparam);
+	printk("do_sched_setscheduler priority: %i\n", lparam.sched_priority);
+	printk("do_sched_setscheduler period: %li\n", lparam.period);
+	printk("do_sched_setscheduler type: %d\n", lparam.type);
+	printk("do_sched_setscheduler policy: %lu\n", policy);
+  	printk("do_sched_setscheduler sched_param size %i\n", sizeof(struct sched_param));
+        
 	rcu_read_lock();
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
-	printk("do_sched_setscheduler sched_param size %i\n", sizeof(struct sched_param));
-	printk("do_sched_setscheduler priority: %i\n", lparam.sched_priority);
-	printk("do_sched_setscheduler period: %li\n", lparam.period);
-	printk("do_sched_setscheduler type: %li\n", lparam.type);
-	printk("do_sched_setscheduler policy: %i\n", policy);
+
 	if (p != NULL)
 		retval = sched_setscheduler(p, policy, &lparam);
 	rcu_read_unlock();

@@ -3,6 +3,7 @@
 #
 
 obj-y   += proc.o
+obj-y	+= cbs_proc.o
 
 proc-y			:= nommu.o task_nommu.o
 proc-$(CONFIG_MMU)	:= mmu.o task_mmu.o

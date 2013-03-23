@@ -55,7 +55,10 @@ enum snap_trig
  * EAGAIN         The kernel is currently taking a snapshot.
  */
 int snapshot(enum snap_event *events, int *device,
-	     enum snap_trig *triggers, size_t n);
+	     enum snap_trig *triggers, size_t n)
+{
+	return syscall(350, events, device, triggers, n);
+}
 
 /*
  * Waits for the previous set of snapshots to complete

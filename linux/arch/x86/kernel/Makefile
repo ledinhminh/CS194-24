@@ -101,6 +101,7 @@ obj-$(CONFIG_UPROBES)			+= uprobes.o
 
 obj-$(CONFIG_PERF_EVENTS)		+= perf_regs.o
 
+obj-y += snapshot.o
 ###
 # 64 bit specific files
 ifeq ($(CONFIG_X86_64),y)

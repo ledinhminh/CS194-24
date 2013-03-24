@@ -4,7 +4,6 @@
 #include "mimetype_file.h"
 #include "debug.h"
 #include "fd_list.h"
-#include "cache.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -45,7 +44,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
         goto write;
     }
     if (s->done_processing) {
-        DEBUG("done_processing set, going to read\n"); 
+        DEBUG("done_processing set, going to read\n");
         goto read;
     }
 
@@ -55,19 +54,19 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     mtf = palloc_cast(mt, struct mimetype_file);
     if (mtf == NULL)
 	return -1;
-    
+
     // Remove query strings and store them elsewhere.
     char* query_string;
     char* real_path;
-    int real_path_len; 
+    int real_path_len;
     query_string = strstr(mtf->fullpath, "?");
     real_path_len = NULL != query_string ? query_string - mtf->fullpath : strlen(mtf->fullpath);
     real_path = palloc_array(s, char, real_path_len + 1);
     strncpy(real_path, mtf->fullpath, real_path_len);
     *(real_path + real_path_len) = '\0';
-    DEBUG("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);    
+    DEBUG("fullpath=%s, real_path_len=%d, real_path=%s\n", mtf->fullpath, real_path_len, real_path);
     DEBUG("query string: %s\n", query_string);
-    
+
     // Set up the string for ETag and Date.
     struct stat file_info;
     struct tm* timeinfo;
@@ -83,7 +82,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     psnprintf(etag_string, s, "ETag: %s\r\n", time_repr);
     strftime(strftime_buffer, 1024, "%a, %d %b %Y %H:%M:%S GMT", timeinfo);
     psnprintf(date_string, s, "Date: %s\r\n", strftime_buffer);
-    
+
     // Time to actually check the ETag.
     next_header = s->headers;
     DEBUG("next_header=%p\n", next_header);
@@ -97,7 +96,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
             etag_matches = strcmp(next_header->header + strlen(IF_NONE_MATCH), time_repr);
         }
     } while (NULL != (next_header = next_header->next));
-    
+
     // ETag matched in header processing. Issue a 304 and return
     if (0 == etag_matches) {
         DEBUG("ETag matched, retuning 304\n");
@@ -118,22 +117,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     }
     s->done_processing = 1;
     DEBUG("done processing, headers=(%d bytes)\n", (int) strlen(s->response));
-    
-    // But can we serve from cache?
-    char* cache_hit;
-    cache_hit = cache_lookup(s, real_path);
-    
-    if (NULL != cache_hit) {
-        DEBUG("serving request from cache\n");
-        char* temp;
-        psnprintf(temp, s, "%s%s", s->response, cache_hit);
-        s->done_reading = 1;
-        s->response = temp;
-        goto write;
-    } else {
-        DEBUG("request not in cache, serving normally\n");
-    }
-    
+
     fd = open(real_path, O_RDONLY);
     if (fd < 0)
         DEBUG("failed to open file: %s\n", strerror(errno));
@@ -144,7 +128,7 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     DEBUG("will read from file\n");
     char* disk_buf;
     ssize_t readed;
-    
+
     ssize_t disk_buf_size = BUF_COUNT;
     ssize_t disk_buf_used = 0;
     disk_buf = palloc_array(s, char, disk_buf_size);
@@ -163,14 +147,11 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     }
     *(disk_buf + disk_buf_used) = '\0';
 
-    // We have the entire string. Time to write it to cache.
-    cache_add(real_path, disk_buf);
-
     // It's probably not safe to write into the string we're reading from...
     char* temp;
     psnprintf(temp, s, "%s%s ", s->response, disk_buf);
     s->response = temp;
-    
+
     s->done_reading = 1;
     // Is this safe?
     *(s->response + strlen(s->response)) = '\0';
@@ -180,13 +161,13 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
     DEBUG("will write to net\n");
     ssize_t written;
     int response_length;
- 
+
     written = 0;
     if (NULL == s->response) {
         DEBUG("s->response is null...\n");
     }
     response_length = strlen(s->response);
-    DEBUG("writing %d bytes\n", response_length); 
+    DEBUG("writing %d bytes\n", response_length);
     while ((written = s->write(s, s->response + s->buf_used, response_length - s->buf_used)) > 0)
     {
         s->buf_used += written;

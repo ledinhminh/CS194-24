@@ -7,7 +7,7 @@
 #include <sys/syscall.h>
 #include <pthread.h>
 
-#define RELEASE
+// #define RELEASE
 
 // There is a possibility it won't be used
 static pthread_mutex_t __attribute__((unused)) __stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -29,7 +29,7 @@ static pthread_mutex_t __attribute__((unused)) __stdout_mutex = PTHREAD_MUTEX_IN
         printf(__VA_ARGS__); \
         pthread_mutex_unlock(&__stdout_mutex); \
     } while (0);
-    
+
 #endif
 
 /* Allocates *str in the palloc_env env and fills it with the rest of arguments to snprintf. */
@@ -38,6 +38,6 @@ static pthread_mutex_t __attribute__((unused)) __stdout_mutex = PTHREAD_MUTEX_IN
         int len = snprintf(NULL, 0, __VA_ARGS__) + 1; \
         str = palloc_array(env, char, len); \
         snprintf(str, len, __VA_ARGS__); \
-    } while (0); 
+    } while (0);
 
 #endif

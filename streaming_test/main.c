@@ -29,7 +29,7 @@ int main(int argc, char **argv)
           tv.tv_sec
     );
 
-  for(i = 0; i <= 4000; i++){
+  for(i = 0; i <= 1000; i++){
     fprintf(stdout, "%d\n, ", i);
     usleep(1000);
   }

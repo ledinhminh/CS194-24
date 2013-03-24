@@ -5,7 +5,8 @@
 
 #include "mimetype.h"
 
-struct mimetype_cgi {
+struct mimetype_cgi
+{
   union {
     struct mimetype;
     struct mimetype mimetype;

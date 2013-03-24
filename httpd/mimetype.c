@@ -4,6 +4,7 @@
 
 #include "mimetype.h"
 #include "mimetype_file.h"
+#include "mimetype_cgi.h"
 #include "debug.h"
 #include <string.h>
 
@@ -25,8 +26,17 @@ struct mimetype *mimetype_new(palloc_env env, const char *path) {
   fullpath = palloc_array(env, char, fullpath_len);
   snprintf(fullpath, fullpath_len, "%s/%s", HTTPD_ROOT, path);
 
-  DEBUG("fullpath = %s\n", fullpath);
   mt = mimetype_file_new(env, fullpath);
+
+  DEBUG("Check if %s is executable\n", fullpath);
+  if (0 == access(fullpath, X_OK)) {
+    DEBUG("Executing: calling mimetype_cgi_new\n");
+    mt = mimetype_cgi_new(env, fullpath);
+  } else {
+    DEBUG("Calling static file\n");
+    mt = mimetype_file_new(env, fullpath);
+  }
+
   pfree(fullpath);
 
   return mt;

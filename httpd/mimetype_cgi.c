@@ -2,7 +2,6 @@
 
 #include "mimetype_cgi.h"
 #include "debug.h"
-#include "fd_list.h"
 #include "git_date.h"
 
 #include <fcntl.h>
@@ -12,7 +11,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/epoll.h>
 
 #define BUF_COUNT 4096
 
@@ -23,12 +21,10 @@
 #define CGI_SERVER_SOFTWARE "cs194-24/1.0"
 #define CGI_SERVER_NAME "127.0.0.1"
 #define CGI_GATEWAY_INTERFACE "CGI/1.1"
-
 #define CGI_SERVER_PROTOCOL "HTTP/1.1"
-
 #define EXPIRES "Expires: "
 
-static int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd);
+static int http_get(struct mimetype *mt, struct http_session *s);
 
 struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath) {
   DEBUG("creating new mimetype_cgi\n");
@@ -46,6 +42,7 @@ struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath) {
   return &(mtc->mimetype);
 }
 
+/*
 int is_streaming(const char* disk_buf)
 {
   const char* end_header;
@@ -68,36 +65,16 @@ int is_streaming(const char* disk_buf)
   }
   return 0;
 }
+*/
 
-void send_data(char* disk_buf, struct http_session *s, int epoll_fd)
+int http_get(struct mimetype *mt, struct http_session *s)
 {
-  char* temp;
-
-  psnprintf(temp, s, "%s", disk_buf);
-  s->response = temp;
-  s->buf_used = 0; //offset for response
-  s->buf_size = strlen(s->response);
-  s->done_reading = 1;
-
-  // No, don't ask me why this is a separate function. Dont close :)
-  write_to_socket_c(s, epoll_fd, 0);
-}
-
-int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
-{
-  // If we've already run the CGI, it;s in the s->response, just
-  // write to the socket
-  if (s->done_reading) {
-    write_to_socket(s, epoll_fd);
-    return 0;
-  }
-
-  (void) epoll_fd;
   struct mimetype_cgi *mtc;
   FILE* fp;
   int fd;
-  // char buf[BUF_COUNT];
+  char buf[BUF_COUNT];
   ssize_t readed;
+
   char* query_string;
   char* real_path;
   int real_path_len;
@@ -151,77 +128,24 @@ int http_get(struct mimetype *mt, struct http_session *s, int epoll_fd)
 
   // Read from disk
   DEBUG("popen()'d, time to read from pipe\n");
-  char *disk_buf = palloc_array(s, char, BUF_COUNT);
-  size_t disk_buf_size, disk_buf_used;
-  int is_it_streaming = 0;
-  disk_buf_size = BUF_COUNT;
-  disk_buf_used = 0;
-  while((readed = read(fd, disk_buf, disk_buf_size - disk_buf_used)) > 0) {
-    DEBUG("read %d bytes from pipe\n", (int) readed);
-    disk_buf_used += readed;
-    // Reallocate buffer if its too small
-    if (disk_buf_used + 3 >= disk_buf_size) {
-      disk_buf_size *= 2;
-      disk_buf = prealloc(disk_buf, disk_buf_size);
-    }
-    is_it_streaming = is_it_streaming ? 1 : is_streaming(disk_buf);
-    if(is_it_streaming) {
-      DEBUG("streaming disk_buf: %s\n", disk_buf);
-      send_data(disk_buf, s, epoll_fd);
-      pfree(disk_buf);
-      disk_buf = palloc_array(s, char, BUF_COUNT);
-      disk_buf_used -= readed;
+
+  while ((readed = read(fd, buf, BUF_COUNT)) > 0) {
+    ssize_t written;
+
+    written = 0;
+    while (written < readed) {
+      ssize_t w;
+
+      w = s->write(s, buf + written, readed - written);
+      if (w > 0)
+        written += w;
     }
   }
+
   // Finished reading from disk setup for writing to socket
-  if(!is_it_streaming) {
-    DEBUG("streaming: Closing file");
-  }
-  send_data(disk_buf, s, epoll_fd);
 
   pclose(fp);
   pfree(real_path);
 
   return 0;
-}
-
-/*
- * Returns -1 if we haven't finished reading
- * Return 0 if we have
- */
-int write_to_socket(struct http_session *s, int epoll_fd)
-{
-  return write_to_socket_c(s, epoll_fd, 1);
-}
-
-int write_to_socket_c(struct http_session *s, int epoll_fd, int close_fd)
-{
-  int written;
-  while ((written = s->write(s, s->response + s->buf_used, s->buf_size - s->buf_used)) > 0) {
-    s->buf_used += written;
-  }
-
-  if (written == -1 && errno == EAGAIN) {
-    // readd to epoll instance and rearm
-    DEBUG("cgi write to net got EAGAIN, rearming\n");
-    struct epoll_event event;
-    event.data.fd = s->fd;
-    event.events = EPOLLOUT | EPOLLET | EPOLLONESHOT;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, s->fd, &event) < 0) {
-      DEBUG("failed to rearm fd: %s\n", strerror(errno));
-    }
-    return -1;
-  } else if (close_fd == 0) {
-    return 0;
-  } else if (written == 0) {
-    // Cleanup time!
-    fd_list_del(s->fd);
-    close(s->fd);
-    return 0;
-  } else {
-    DEBUG("error writing to socket: %s\nBUF: %s\n", strerror(errno), s->response);
-    fd_list_del(s->fd);
-    close(s->fd);
-    return -1;
-  }
 }

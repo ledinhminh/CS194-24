@@ -5,6 +5,12 @@
 
 #include "palloc.h"
 
+#define PORT 8088
+#define LINE_MAX 1024
+#define MAX_EVENTS 1
+
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP | EPOLLHUP
+
 /* Allows HTTP sessions to be transported over the HTTP protocol */
 struct http_session {
   const char * (*gets)(struct http_session *);
@@ -18,6 +24,15 @@ struct http_session {
   size_t buf_size, buf_used;
 
   int fd;
+
+  // added
+  int disk_fd; //disk fd
+  int done_processing; //0 is haven't read, 1 if we did
+  int done_reading;
+  int done_req_read;
+  struct http_header* headers;
+
+  char* response;
 };
 
 /* A server that listens for HTTP connections on a given port. */
@@ -30,4 +45,6 @@ struct http_server {
 /* Creates a new HTTP server listening on the given port. */
 struct http_server *http_server_new(palloc_env env, short port);
 
+// added
+//int listen_on_port(short port);
 #endif

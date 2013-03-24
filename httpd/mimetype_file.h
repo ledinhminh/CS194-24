@@ -5,14 +5,13 @@
 
 #include "mimetype.h"
 
-struct mimetype_file
-{
-    union {
-	struct mimetype;
-	struct mimetype mimetype;
-    };
+struct mimetype_file {
+  union {
+    struct mimetype;
+    struct mimetype mimetype;
+  };
 
-    const char *fullpath;
+  const char *fullpath;
 };
 
 struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath);

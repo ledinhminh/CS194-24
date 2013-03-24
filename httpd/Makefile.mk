@@ -4,7 +4,7 @@ HTTPD_HDR := $(wildcard ./httpd/*.h)
 HTTPD_OBJ := $(HTTPD_SRC:%.c=%.o)
 HTTPD_OBJ := $(HTTPD_OBJ:./httpd/%=./.obj/httpd.d/%)
 HTTPD_DEP := $(HTTPD_OBJ:%.o:%.d)
-HTTPD_FLAGS := -fms-extensions -pthread
+HTTPD_FLAGS := -fms-extensions
 
 -include $(HTTPD_DEP) 
 

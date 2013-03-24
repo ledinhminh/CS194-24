@@ -5,13 +5,6 @@
 
 #include "palloc.h"
 
-/* Linked list of headers */
-struct http_header
-{
-    const char* header;
-    struct http_header* next;
-};
-
 /* Allows HTTP sessions to be transported over the HTTP protocol */
 struct http_session
 {
@@ -25,14 +18,7 @@ struct http_session
     char *buf;
     size_t buf_size, buf_used;
 
-    int fd; //network fd
-    int disk_fd; //disk fd
-    int done_processing; //0 is haven't read, 1 if we did
-    int done_reading;
-    int done_req_read;
-    struct http_header* headers;
-
-    char* response;
+    int fd;
 };
 
 /* A server that listens for HTTP connections on a given port. */
@@ -45,6 +31,5 @@ struct http_server
 
 /* Creates a new HTTP server listening on the given port. */
 struct http_server *http_server_new(palloc_env env, short port);
-int listen_on_port(short port);
 
 #endif

@@ -88,18 +88,7 @@ void *prealloc(const void *ptr, size_t size)
 	while (cur != NULL)
 	{
 	    if (cur->blk == blk)
-        {
-            cur->blk = nblk;
-            //we need to tell all children of nblk
-            //that nblk is the new odou-san
-            struct child_list *n_cur;
-            n_cur = nblk->children;
-            while(n_cur != NULL)
-            {
-                n_cur->blk = nblk;
-                n_cur = n_cur->next;
-            }
-        }
+		cur->blk = nblk;
 
 	    cur = cur->next;
 	}
@@ -147,7 +136,7 @@ void * _palloc_cast(const void *ptr, const char *type)
 
     blk = PTR_BLK(ptr);
 
-    if (blk->type != type && (strcmp(blk->type, type) != 0))
+    if (blk->type != type)
 	return NULL;
 
     return (void *)ptr;

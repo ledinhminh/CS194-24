@@ -140,6 +140,7 @@ int main(int argc, char **argv)
   fprintf(stdout,
           "HTTP/1.1 200 OK\r\n"
           "Content-Type: text/plain\r\n"
+          "X-Buffering: Streaming\r\n"
           "Date: %s\r\n"
           "Expires: %s\r\n"
           "ETag: \"%lx\"\r\n"

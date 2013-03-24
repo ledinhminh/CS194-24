@@ -44,18 +44,22 @@ static void enqueue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
      
     struct sched_cbs_entity* cbs_se = &p->cbs;
     
-    printk("cbs: enqueue_task: enqueueing '%s' on %d; flags=%d\n", p->comm, rq->cpu, flags);
+    printk("cbs: enqueue_task: enqueueing '%s' (%d) on %d; flags=%d\n", p->comm, task_pid_nr(p), rq->cpu, flags);
     printk("cbs: enqueue_task: deadline=%llu, init_budget=%llu\n", cbs_se->deadline, cbs_se->init_budget);
     
     __enqueue_entity_cbs(&rq->cbs, &p->cbs);
     
     // Why do we need to do this? No one knows.
     inc_nr_running(rq);
+    
+    printk("cbs: nr_running=%u on %d\n", rq->nr_running, rq->cpu);
+    
+    printk("by the way, rq->clock=%lu\n", (unsigned long) rq->clock);
 }
 
 static void dequeue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 {
-    printk("cbs: dequeue_task: dequeueing '%s' on %d, flags=%d\n", p->comm, rq->cpu, flags);
+    printk("cbs: dequeue_task: dequeueing '%s' (%d) on %d, flags=%d\n", p->comm,task_pid_nr(p), rq->cpu, flags);
     
     __dequeue_entity_cbs(&rq->cbs, &p->cbs);
     
@@ -64,10 +68,12 @@ static void dequeue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 
 static struct task_struct *pick_next_task_cbs(struct rq *rq)
 {
+    struct sched_cbs_entity* cbs_se = __pick_first_entity_cbs(&rq->cbs);
+    struct task_struct* p;
+
     // printk("cbs: pick_next_task: rq=%pr\n", rq);
     trace_printk("called\n");
 
-    struct sched_cbs_entity* cbs_se = __pick_first_entity_cbs(&rq->cbs);
 
     // In that-which-must-not-be-named, there is a pre-check for the nr_running
     // of the **_rq. I guess this is the same.
@@ -78,9 +84,9 @@ static struct task_struct *pick_next_task_cbs(struct rq *rq)
     }
     
 
-    struct task_struct* p = container_of(cbs_se, struct task_struct, cbs);
+    p = container_of(cbs_se, struct task_struct, cbs);
 
-    printk("cbs: pick_next_task: not skipped, picking '%s'\n", p->comm);
+    printk("cbs: pick_next_task: not skipped, picking '%s' (%d)\n", p->comm, task_pid_nr(p));
     
     // Set the start time to now
     p->se.exec_start = rq->clock_task;
@@ -105,7 +111,7 @@ static struct task_struct *pick_next_task_cbs(struct rq *rq)
  */
 static void put_prev_task_cbs(struct rq* rq, struct task_struct* p)
 {
-    printk("cbs: put_prev_task: letting go of '%s' from %d\n", p->comm, rq->cpu);
+    printk("cbs: put_prev_task: letting go of '%s' (%d) from %d\n", p->comm, task_pid_nr(p), rq->cpu);
     update_curr_cbs(rq);
 }
 
@@ -114,15 +120,53 @@ static void check_preempt_curr_cbs(struct rq *rq, struct task_struct *p, int fla
 
 }
 
+static void _task_tick_deadline(struct rb_node* node)
+{
+    struct sched_cbs_entity* entity;
+    
+    if (RB_EMPTY_NODE(node))
+        return;
+    
+    entity = rb_entry(node, struct sched_cbs_entity, run_node);
+    entity->deadline--;
+    
+    _task_tick_deadline(node->rb_left);
+    _task_tick_deadline(node->rb_right);
+}
+
 static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 {
-    // So simple!
+    // A tick of budget is used, for the current task.
     p->cbs.curr_budget--;
+    
+    // A tick of deadline is used, for everyone.
+    // This doesn't violate any red-black constraints, because we're reducing everyone.
+    _task_tick_deadline(rq->cbs.tasks_timeline.rb_node);
+    
+    // Is the budget completely used up?
     if (0 == p->cbs.curr_budget) {
-        printk("cbs: budget deficit!\n");
+    
+        /* Update the parameters only if the time is right.
+         * 1) The current deadline is in the past.
+         *   OR
+         * 2) Using the remaining budget with the current deadline would make
+         *    the entity exceed its bandwidth.
+         *    = curr_period * (init_budget / init_period) < curr_budget
+         * NOTE: Remove verbatim wording!
+         */
+        if (0 == p->cbs.deadline || \
+            p->cbs.deadline * p->cbs.init_budget / p->cbs.init_period < p->cbs.deadline) {
+            p->cbs.deadline += p->cbs.init_period;
+            p->cbs.curr_budget = p->cbs.init_budget;
+        }
+            
+        // Dequeue, and re-enqueue.
+        dequeue_task_cbs(rq, p, 0); // Flags?
+        enqueue_task_cbs(rq, p, 0);
+        printk("cbs: budget deficit; new budget=%llu, deadline=%llu\n", p->cbs.curr_budget, p->cbs.deadline);
     }
     if (0 == p->cbs.curr_budget % 10) {
-        printk("cbs: task_tick: budget now %lu\n", p->cbs.curr_budget);
+        printk("cbs: task_tick: budget now %llu\n", p->cbs.curr_budget);
     }
 }
 

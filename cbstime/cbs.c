@@ -47,7 +47,6 @@ struct cbs_struct
 
 struct new_sched_param {
     int sched_priority;
-    unsigned long long deadline;
     unsigned long long cpu;
     unsigned long long period;
     int type;
@@ -59,8 +58,12 @@ static void *pthread_wrapper(void *arg)
     struct cbs_struct *cs;
     cs = arg;
 
-    //check cs->ret after it gets run and reschedule if needbe
-    cs->ret = cs->entry(cs->arg);
+    // Although the scheduler has access to the exit code via task_struct, 
+    // it can't restart the thread from the beginning. So we take care of it.
+    while (CBS_CONTINUE == (cs->ret = cs->entry(cs->arg)));
+    // Actually, this is the same thread. We need a way to signal the scheduler
+    // that we don't ought to be scheduled until the beginning of the next period.
+    // Oh well.
     return NULL;
 }
 
@@ -69,6 +72,7 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
                int (*entry)(void *), void *arg)
 {
     struct cbs_struct *cs;
+    int ss_rv;
 
     *thread = NULL;
     cs = malloc(sizeof(*cs));
@@ -80,9 +84,6 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     cs->period = *period;
     cs->cpu = cpu;
     cs->type = type;
-    
-
-     
 
     if (pthread_create(&cs->thread, NULL, &pthread_wrapper, cs) != 0)
         abort();
@@ -97,19 +98,18 @@ int cbs_create(cbs_t *thread, enum cbs_type type,
     struct new_sched_param cbs_params = {
        .sched_priority = 1, // Either change <46>kernel/sched/sched.h or do this
        .cpu = cs->cpu,
-       .deadline = 0, // Set by scheduler
-       .period = ((cs->period.tv_sec * MICRO) + cs->period.tv_usec) * 1000, // Value is in nanoseconds
+       
+       // Value is in microseconds
+       .period = ((cs->period.tv_sec * MICRO) + cs->period.tv_usec), 
        .type = cs->type, 
     };
 
     fprintf(stderr, "before set: %d\n", cbs_params.sched_priority);
     fprintf(stderr, "new_sched_param size %ld\n", sizeof(struct new_sched_param));
     
-    int rv = pthread_setschedparam(cs->thread, SCHED_CBS, (struct sched_param *) &cbs_params);
-    if(rv != 0){
-        printf("rv=%d\n", rv);
-        perror("Failed to set scheduler\n");
-    }
+    // Sometimes this fails.
+    while((ss_rv = pthread_setschedparam(cs->thread, SCHED_CBS, (struct sched_param *) &cbs_params)))
+        printf("failed to set scheduler: %s\n", strerror(-ss_rv));
 
     *thread = cs;
     return 0;

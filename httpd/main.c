@@ -2,13 +2,23 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 
+#include "debug.h"
 #include "http.h"
 #include "mimetype.h"
 #include "palloc.h"
 
 #define PORT 8088
 #define LINE_MAX 1024
+#define MAX_EVENTS 1
+
+#define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP | EPOLLHUP
 
 int main(int argc, char **argv)
 {
@@ -58,7 +68,7 @@ int main(int argc, char **argv)
       size_t len;
 
       len = strlen(line);
-      fprintf(stderr, "[%04lu] < %s\n", len, line);
+      DEBUG("[%04lu] < %s\n", len, line);
       pfree(line);
 
       if (len == 0)

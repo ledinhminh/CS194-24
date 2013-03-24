@@ -321,6 +321,7 @@
 312	common	kcmp			sys_kcmp
 
 350 common snapshot			sys_snapshot
+351 common snapshot_join	sys_snapshot_join
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

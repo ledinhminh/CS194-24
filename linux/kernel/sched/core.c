@@ -3845,17 +3845,23 @@ recheck:
 	prev_class = p->sched_class;
 
     // Note: some important calculations are being done here!
+    // They should be done in cbs.c instead.
 	if (policy == SCHED_CBS) {
         // Trust cpu_info for our bogomips. Who knows how loops_per_jiffy has been adulterated since boot!
         unsigned long long bogomips_whole = boot_cpu_data.loops_per_jiffy/(500000/HZ);
         unsigned long long budget = param->cpu * HZ / bogomips_whole;
+        unsigned long long period = param->period * HZ / 1000000;
 
-        printk("cbs: bogomips=%llu, budget=%llu ticks\n", bogomips_whole, budget);
-		p->cbs.deadline = param->deadline;
+        printk("cbs: HZ=%i, bogomi=%llu, bogomips=%llu, budget=%llu ticks, period=%llu ticks\n", HZ, param->cpu, bogomips_whole, budget, period);
+        // Really should just error out, but we'll call it quits.
+        BUG_ON(budget > period);
+        
+		// p->cbs.deadline = param->period;
 		p->cbs.curr_budget = budget;
 		p->cbs.init_budget = budget;
-		p->cbs.type = param->type;
-		p->cbs.period = param->period;
+		p->cbs.init_period = period;
+        p->cbs.deadline = period;
+        p->cbs.type = param->type;
 	}
 
 	__setscheduler(rq, p, policy, param->sched_priority);
@@ -3917,12 +3923,11 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	if (copy_from_user(&lparam, param, sizeof(struct sched_param)))
 		return -EFAULT;
 
-    printk("sched_param: %pr\n", lparam);
 	printk("do_sched_setscheduler priority: %i\n", lparam.sched_priority);
-	printk("do_sched_setscheduler period: %li\n", lparam.period);
+	printk("do_sched_setscheduler period: %llu\n", lparam.period);
 	printk("do_sched_setscheduler type: %d\n", lparam.type);
-	printk("do_sched_setscheduler policy: %lu\n", policy);
-  	printk("do_sched_setscheduler sched_param size %i\n", sizeof(struct sched_param));
+	printk("do_sched_setscheduler policy: %d\n", policy);
+  	printk("do_sched_setscheduler sched_param size %lu\n", sizeof(struct sched_param));
         
 	rcu_read_lock();
 	retval = -ESRCH;

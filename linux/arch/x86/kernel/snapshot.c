@@ -1,11 +1,13 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/syscalls.h>
-#include <../../../fs/proc/cbs_proc.h> //need for cbs_proc_t
+#include <../../../fs/proc/cbs_proc.h> //need for cbs_proc_t, seems hacky...
 #define CBS_MAX_HISTORY 64
 #define SNAP_MAX_TRIGGERS 8
 
+//make sure synced with cbs_proc.c
 struct snap_bucket {
+	int valid;
 	enum snap_event s_event;
 	enum snap_trig s_trig;
 	int device;
@@ -13,13 +15,14 @@ struct snap_bucket {
 	struct cbs_proc * history;
 };
 
+//make sure synced with cbs_proc.c
 struct snap_buffer {
 	struct snap_bucket * buckets;
 	int num_buckets;
 };
 
+//make sure synced with cbs_proc.c
 struct cbs_proc {
-	//TODO: put pointer to the rq in here
 	long pid;
 	cbs_time_t creation_time;
 	cbs_time_t start_time;
@@ -28,6 +31,7 @@ struct cbs_proc {
 	cbs_time_t compute_time;
 	enum cbs_state state;
 	int valid; //1 if it is, 0 if its not
+	int is_next; //if this proc is the next proc
 	struct cbs_proc* next; //pointer to next struct in the list
 }; 
 
@@ -74,6 +78,7 @@ int add_cbs_proc(int bucket_num, struct cbs_proc p){
 		proc_entry->compute_time = p.compute_time;
 		proc_entry->state = p.state;
 		proc_entry->valid = 1;
+		//don't touch next pointer
 	} else {
 		//no history entry there, gotta do a kmalloc...
 		struct cbs_proc *copy = kmalloc(sizeof(struct cbs_proc), GFP_KERNEL);
@@ -88,6 +93,9 @@ int add_cbs_proc(int bucket_num, struct cbs_proc p){
 		copy->next = NULL;
 	}
 
+	//increment the bucket depth
+	bucket.bucket_depth++;
+
 	//gotta remember to free that lock
 	mutex_unlock(&lock);
 	return 0;
@@ -98,6 +106,7 @@ void invalidate_buffer(void){
 	for(i = 0; i < SNAP_MAX_TRIGGERS; i++){
 		//go through each bucket and invalidate the history
 		struct snap_bucket bucket = bucket_list[i];
+		bucket.valid = 0;
 		struct cbs_proc *proc_entry = bucket.history;
 		
 		if (proc_entry == NULL)
@@ -113,6 +122,41 @@ void invalidate_buffer(void){
 	}
 }
 
+void check_done(void){
+	//check if all the snapshots are all done
+	int i;
+	for (i = 0; i < buffer.num_buckets; i++){
+		struct snap_bucket bucket = bucket_list[i];
+		if(bucket.bucket_depth != CBS_MAX_HISTORY){
+			break;
+		}
+	}
+	mutex_lock(&lock);
+	running = 0;
+	mutex_unlock(&lock);
+}
+
+//wrapper for adding a proc, to make thing easier in the scheduler
+void snap_add_proc(int bucket_num, long id, long creation, long start,
+			 long end, long pd, long compute, enum cbs_state ste){
+	struct cbs_proc to_add = {
+		.pid = id,
+		.creation_time = creation,
+		.start_time = start,
+		.end_time = end, //initialize to -1
+		.period = pd,
+		.compute_time = compute,
+		.state = ste,
+	};
+
+	add_cbs_proc(bucket_num, to_add);
+}
+
+asmlinkage long sys_snapshot_join(void){
+	while (running);
+	return 0;
+}
+
 asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 	     enum snap_trig __user *triggers, size_t n)
 {
@@ -123,7 +167,7 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 		return EAGAIN;
 	} else {
 		if(mutex_trylock(&lock)){
-			running = 0;//TODO: FIGURE OUT HOW THIS WILL WORK
+			running = 1;//TODO: FIGURE OUT HOW THIS WILL WORK
 		} else {
 			//someone else has the lock
 			//just say EAGAIN to be safe

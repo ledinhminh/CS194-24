@@ -22,28 +22,24 @@
 
 #define EPOLL_FLAGS EPOLLIN | EPOLLET | EPOLLONESHOT | EPOLLRDHUP | EPOLLHUP
 
-struct server_thread_args
-{
+struct server_thread_args {
 	int listen_socket_fd;
 	int epoll_fd;
 	palloc_env* thread_env;
 	struct fd_list* fd_list_head;
 };
 
-static int make_socket_non_blocking (int sfd)
-{
+static int make_socket_non_blocking (int sfd) {
   int flags;
 
   flags = fcntl (sfd, F_GETFL, 0);
-  if (flags == -1)
-  {
+  if (flags == -1) {
     perror ("fcntl couldn't get flags");
     return -1;
   }
 
   flags |= O_NONBLOCK;
-  if (fcntl (sfd, F_SETFL, flags) == -1)
-  {
+  if (fcntl (sfd, F_SETFL, flags) == -1) {
     perror ("fcntl could set nonblock flag");
     return -1;
   }
@@ -51,11 +47,10 @@ static int make_socket_non_blocking (int sfd)
   return 0;
 }
 
-void* start_thread(void *args)
-{
+void* start_thread(void *args) {
 	struct http_server *server;
 
-	//epoll stuff
+	//epoll stuffmind doing a git whatchanged
 	struct epoll_event *events;
 
 	//argument stuff
@@ -84,10 +79,9 @@ void* start_thread(void *args)
   DEBUG("socket_fd=%d\n", socket_fd);
 
 	if (server == NULL)
-        DEBUG("cannot allocate server: %s\n", strerror(errno));
+    DEBUG("cannot allocate server: %s\n", strerror(errno));
 
-	while (true)
-	{
+	while (true) {
 		struct http_session *session;
 		struct epoll_event event;
 
@@ -102,38 +96,33 @@ void* start_thread(void *args)
 
 		num_active_epoll = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
 		if (num_active_epoll < 0 && errno != EINTR) {
-            DEBUG("epoll_wait failure: %s\n", strerror(errno));
+      DEBUG("epoll_wait failure: %s\n", strerror(errno));
 			exit(1);
 		}
-        DEBUG("num_active_epoll=%d\n", num_active_epoll);
-		for (index = 0; index < num_active_epoll; index++)
-		{
-			if ((events[index].events & EPOLLERR))
-			{
+    DEBUG("num_active_epoll=%d\n", num_active_epoll);
+		for (index = 0; index < num_active_epoll; index++) {
+			if ((events[index].events & EPOLLERR)) {
 				// Something happened, the socket closed so we should close
 				// it on our side
 				DEBUG("EPOLLERR ERROR %s", strerror(errno));
 				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
 			}
-			else if (events[index].events & EPOLLHUP)
-			{
+			else if (events[index].events & EPOLLHUP) {
 				DEBUG("EPOLLHUP ERROR %s", strerror(errno));
 				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
 			}
-			else if (events[index].events & EPOLLRDHUP)
-			{
+			else if (events[index].events & EPOLLRDHUP) {
 				DEBUG("EPOLLRDHUP ERROR (%i) %s", errno, strerror(errno));
 				fd_list_del(events[index].data.fd);
 				close(events[index].data.fd);
 			}
-			else if (events[index].data.fd == socket_fd)
-			{
-                DEBUG("got listening socket in event\n");
+			else if (events[index].data.fd == socket_fd) {
+        DEBUG("got listening socket in event\n");
 				session = server->wait_for_client(server);
 
-                DEBUG("s=%p, s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session, session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
+        DEBUG("s=%p, s->buf=%p, s->response=%p, s->buf_size=%d, s->buf_used=%d, s->done_reading=%d, s->done_processing=%d\n", session, session->buf, session->response, (int) session->buf_size, (int) session->buf_used, session->done_reading, session->done_processing);
 
 				// Check if session is NULL
 				if (session == NULL)
@@ -141,88 +130,81 @@ void* start_thread(void *args)
 					fprintf(stderr, "server->wait_for_client() returned NULL...\n");
 					goto rearm;
 				}
-                DEBUG("session not null\n");
+        DEBUG("session  not null\n");
 
 				// Try to make accepting socket non-blocking
 				if (make_socket_non_blocking(session->fd) < 0)
 				{
-                    DEBUG("failed to set non-blocking\n");
+          DEBUG("failed to set non-blocking\n");
 					goto rearm;
 				}
-                DEBUG("socket non-blocking set\n");
+        DEBUG("socket non-blocking set\n");
 
 				// Add session to fd_list
 				fd_list_add(env, session->fd, session);
-                DEBUG("added to fd_list\n");
+        DEBUG("added to fd_list\n");
 
 				// Add the accepted socket into epoll
 				struct epoll_event sess_event;
 				sess_event.data.fd = session->fd;
 				sess_event.events = EPOLL_FLAGS;
 				if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session->fd, &sess_event) < 0) {
-                    DEBUG("couldn't add socket to epoll: %s\n", strerror(errno));
+          DEBUG("couldn't add socket to epoll: %s\n", strerror(errno));
 					goto rearm;
 				}
-                DEBUG("added session socket fd=%d to epoll\n", session->fd);
+        DEBUG("added session socket fd=%d to epoll\n", session->fd);
 
-				rearm:
+      rearm:
 				// Rearm the socket
 				// Not sure why, but we have to rearm the socket with the listening socket descriptor
 				// with another instance with the correct event flags...
 				// I guess that the event flags are cleared.
 				event.data.fd = socket_fd;
 				event.events = EPOLL_FLAGS;
-                DEBUG("rearming\n");
+        DEBUG("rearming\n");
 				if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, events[index].data.fd, &event)) {
-                    DEBUG("epoll_ctl failed: %s\n", strerror(errno));
+          DEBUG("epoll_ctl failed: %s\n", strerror(errno));
 				}
 			}
-			else
-			{
-                DEBUG("processing request, fd=%d\n", events[index].data.fd);
-                fd_list_print();
+			else {
+        DEBUG("processing request, fd=%d\n", events[index].data.fd);
+        fd_list_print();
 				// An accepted socket fd
 				session = fd_list_find(events[index].data.fd);
 				DEBUG("session=%p\n", session);
-                // It happens.
-                if (NULL == session) {
-                    DEBUG("session null. search failed?\n");
-                    exit(1);
-                }
+        // It happens.
+        if (NULL == session) {
+          DEBUG("session null. search failed?\n");
+          exit(1);
+        }
 
 				//the session at this point can be either a socket_fd or a disk_fd, we should check
-				if (events[index].data.fd == session->fd)
-				{
+				if (events[index].data.fd == session->fd) {
 					DEBUG("handling network fd\n");
 
 					//a socket fd, we should read from it if we have to
 					ssize_t readed = 0;
-					if (session->done_req_read == 0)
-					{
+					if (session->done_req_read == 0) {
 						while (
 							(readed = read(session->fd, session->buf + session->buf_used,
-								session->buf_size - session->buf_used)) > 0)
-						{
+                             session->buf_size - session->buf_used)) > 0) {
 							DEBUG("read %d bytes, buf=(%d bytes)\n", (int) readed, (int) strlen(session->buf));
-						    if (readed > 0)
-						      session->buf_used += readed;
+              if (readed > 0)
+                session->buf_used += readed;
 
-						    if (session->buf_used >= session->buf_size)
-						    {
-						      session->buf_size *= 2;
-						      session->buf = prealloc(session->buf, session->buf_size);
-						    }
+              if (session->buf_used >= session->buf_size) {
+                session->buf_size *= 2;
+                session->buf = prealloc(session->buf, session->buf_size);
+              }
 						}
-						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n") || readed < 0)
-						{
+						if (0 == strcmp(session->buf + session->buf_used - 4, "\r\n\r\n") || readed < 0) {
 							DEBUG("done reading\n");
 
-                            session->done_req_read = 1;
+              session->done_req_read = 1;
 
 							//start processing request
 							line = session->gets(session);
-							if (line == NULL)
-							{
+							if (line == NULL) {
 								fprintf(stderr, "Client connected, but no lines could be read\n");
 								goto cleanup;
 							}
@@ -230,21 +212,19 @@ void* start_thread(void *args)
 							method = palloc_array(session, char, strlen(line));
 							file = palloc_array(session, char, strlen(line));
 							version = palloc_array(session, char, strlen(line));
-							if (sscanf(line, "%s %s %s", method, file, version) != 3)
-							{
+							if (sscanf(line, "%s %s %s", method, file, version) != 3) {
 								fprintf(stderr, "Improper HTTP request\n");
 								goto cleanup;
 							}
 
-/* 							fprintf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
-								method, file, version);
- */
+              /* printf(stderr, "[%04lu] < '%s' '%s' '%s'\n", strlen(line),
+               * method, file, version);
+               */
 							headers = palloc(session, struct http_header);
 							DEBUG("new http_headers at %p\n", headers);
 							session->headers = headers;
 
-							while ((line = session->gets(session)) != NULL)
-							{
+							while ((line = session->gets(session)) != NULL) {
 								size_t len;
 
 								len = strlen(line);
@@ -253,7 +233,7 @@ void* start_thread(void *args)
 								next_header = palloc(session, struct http_header);
 								headers->next = next_header;
 								headers = next_header;
-	                            headers->header = NULL;
+                headers->header = NULL;
 
 								if (len == 0)
 									break;
@@ -261,20 +241,17 @@ void* start_thread(void *args)
 							mt = mimetype_new(session, file);
 							if (strcasecmp(method, "GET") == 0)
 								mterr = mt->http_get(mt, session, epoll_fd);
-							else
-							{
+							else {
 								fprintf(stderr, "Unknown method: '%s'\n", method);
 								goto cleanup;
 							}
 
-							if (mterr != 0)
-							{
+							if (mterr != 0)	{
 								perror("unrecoverable error while processing a client");
 								abort();
 							}
 						}
-						else if (readed == -1 && errno == EAGAIN)
-						{
+						else if (readed == -1 && errno == EAGAIN)	{
 							//We got an EGAIN from reading from socket into buffer
 							//We need to rearm
 							DEBUG("REACHED EGAIN ARMING IN EPOLL\n");
@@ -287,33 +264,28 @@ void* start_thread(void *args)
 							}
 							DEBUG("ARMED IN EPOLL, CONTINUING\n");
 						} else {
-                            session->done_req_read = 1;
-                        }
+              session->done_req_read = 1;
+            }
 					}
-					else
-					{
+					else {
 						//we've already finished reading off the socket
 						mt = mimetype_new(session, file);
 						if (strcasecmp(method, "GET") == 0)
 							mterr = mt->http_get(mt, session, epoll_fd);
-						else
-						{
+						else {
 							fprintf(stderr, "Unknown method: '%s'\n", method);
 							goto cleanup;
 						}
 
-						if (mterr != 0)
-						{
+						if (mterr != 0) {
 							perror("unrecoverable error while processing a client");
 							abort();
 						}
 					}
-
 				}
-
 			}
-			cleanup:
-            DEBUG("finished processing request\n");
+    cleanup:
+      DEBUG("finished processing request\n");
 		}
 	}
 }
@@ -322,7 +294,6 @@ int main(int argc, char **argv)
 {
 	palloc_env env;
 
-  struct server_thread_args thread_args;
 	int socket_fd;
 	int epoll_fd;
 	int proc_num;
@@ -366,9 +337,11 @@ int main(int argc, char **argv)
 
 	// Populate the thread arguments
 	// Each thread needs information so we pass it to them in a struct
-	thread_args.listen_socket_fd = socket_fd;
-	thread_args.thread_env = &env;
-	thread_args.epoll_fd = epoll_fd;
+  const struct server_thread_args thread_args = {
+    .listen_socket_fd = socket_fd,
+    .thread_env = &env,
+    .epoll_fd = epoll_fd,
+  };
 
 	DEBUG("passing listening socket fd=%d to threads\n", socket_fd);
 
@@ -378,9 +351,7 @@ int main(int argc, char **argv)
 	threads = palloc_array(env, pthread_t, proc_num);
 	for (i = 0; i < proc_num; i++){
 		pthread_t thread;
-    struct server_thread_args* t = malloc(sizeof(struct server_thread_args));
-    *t = thread_args;
-		pthread_create(&thread, NULL, start_thread, (void*) t);
+		pthread_create(&thread, NULL, start_thread, (void*) thread_args);
 		threads[i] = thread;
 	}
 

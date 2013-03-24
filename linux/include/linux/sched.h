@@ -5,7 +5,6 @@
 
 struct sched_param {
     int sched_priority;
-    unsigned long long deadline;
     unsigned long long cpu;
     unsigned long long period;
     int type;
@@ -1179,11 +1178,35 @@ struct sched_rt_entity {
 struct sched_cbs_entity {
 	struct rb_node run_node;
 
-	unsigned long long deadline;
+    /* These will all be in ns (units of rq->clock).  */
+    /* NO LONGER. These will all be in ticks. */
+    
+    /* The absolute deadline of the task; if p->cbs.deadline < rq->clock,
+     * we have exceeded deadline.
+     */
+	// unsigned long long deadline;
+    
+    /* The current budget of the task, which is decreased by
+     * delta = rq->clock_task - p->se.exec_start upon each task_tick.
+     */
 	unsigned long long curr_budget;
+    
+    /* The initial budget of the task. */
 	unsigned long long init_budget;
-	double bandwidth;
-	unsigned long long period;
+    
+    // Note: we ought to be doing this calculation by ourselves.
+    /* Utilization of the CBS server, in units/1000. */
+	// unsigned long long bandwidth_millis;
+    
+    /* Period of this task. */
+	unsigned long long init_period;
+    
+    /* Time remaining in current period.
+     * A task hits its deadline when this is 0.
+     */
+    unsigned long long deadline;
+    
+    /* Whether this task is CBS_RT or CBS_BW. */
 	int type;
 };
 

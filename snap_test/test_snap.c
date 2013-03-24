@@ -27,5 +27,7 @@ int main(int argc, char **argv){
 	if(snapshot(events, device, triggers, n) != 0){
 		perror("SNAPERROR:");
 	}
+	snap_join();
+	fprintf(stderr, "exiting\n");
 	return 0;
 }

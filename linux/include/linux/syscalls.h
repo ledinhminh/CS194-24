@@ -883,4 +883,6 @@ enum snap_trig
 
 asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 	     enum snap_trig __user *triggers, size_t n);
+
+asmlinkage long sys_snapshot_join(void);
 #endif

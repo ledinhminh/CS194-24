@@ -70,6 +70,8 @@ int snapshot(enum snap_event *events, int *device,
  *
  * return         0 on success, -1 on failure
  */
-int snap_join(void);
+int snap_join(void){
+	return syscall(351);
+}
 
 #endif

@@ -15,20 +15,24 @@ enum snap_trig
     SNAP_TRIG_AEDGE,    /* Triggers on the after before an event starts */
 };
 
+//make sure synced with snapshot.c
 struct snap_bucket {
+	int valid;
 	enum snap_event s_event;
 	enum snap_trig s_trig;
 	int device;
 	int bucket_depth;
-	struct cbs_proc_t* proc_list;
+	struct cbs_proc* history;
 };
 
+//make sure synced with snapshot.c
 struct snap_buffer {
 	struct snap_bucket * buckets;
 	int num_buckets;
 };
+
+//make sure synced with snapshot.c
 struct cbs_proc {
-	//TODO: put pointer to the rq in here
 	long pid;
 	cbs_time_t creation_time;
 	cbs_time_t start_time;
@@ -37,20 +41,21 @@ struct cbs_proc {
 	cbs_time_t compute_time;
 	enum cbs_state state;
 	int valid; //1 if it is, 0 if its not
+	int is_next; //if this proc is the next proc
 	struct cbs_proc* next; //pointer to next struct in the list
 }; 
 
 extern struct snap_buffer buffer;
 
-int cbs_snap(char *buf)
+int cbs_snap(char *buf, int bucket_num)
 {
 	int len=0;
 
-	int index;
+	// int index;
 
-	for(index = 0; index < buffer.num_buckets; index++){
-		struct snap_bucket bucket = buffer.buckets[index];
-		len += sprintf(buf+len, "Bucket #%i\n", index);
+	// for(index = 0; index < buffer.num_buckets; index++){
+		struct snap_bucket bucket = buffer.buckets[bucket_num];
+		len += sprintf(buf+len, "Bucket #%i\n", bucket_num);
 		if (bucket.s_event == SNAP_EVENT_CBS_SCHED){
 			len += sprintf(buf+len, "EVENT: CBS\n");
 		} else {
@@ -65,7 +70,7 @@ int cbs_snap(char *buf)
 		}
 		len += sprintf(buf+len, "DEPTH: %i\n", bucket.bucket_depth);
 		len += sprintf(buf+len, "\n");
-	}
+	// }
 
 	return len;
 }
@@ -79,8 +84,15 @@ int cbs_snap(char *buf)
  * defines the snapshot index to iterate over.
  */
 void cbs_list_history(int sid, cbs_func_t func, void *arg){
-	
-
+	//sid is bucket number
+	struct snap_bucket bucket = buffer.buckets[sid];
+	//iterator down the list and call func on each proc
+	int i;
+	struct cbs_proc *process = bucket.history;
+	for (i = 0; i < bucket.bucket_depth; i++){
+		func(process, arg);
+		process = process->next;
+	}
 }
 
 /*
@@ -90,6 +102,19 @@ void cbs_list_history(int sid, cbs_func_t func, void *arg){
  * running process.
  */
 void cbs_list_current(int sid, cbs_func_t func, void *arg){
+	//iterate down the bucket and find the one whose state is CBS_STATE_RUNNING
+	struct snap_bucket bucket = buffer.buckets[sid];
+	int i = 0;
+	struct cbs_proc *process = bucket.history;
+	while (i < bucket.bucket_depth){
+		if(process->state == CBS_STATE_RUNNING){
+			func(process, arg);
+			break;
+		} else {
+			process = process->next;
+			i++;
+		}
+	}
 
 }
 
@@ -97,7 +122,18 @@ void cbs_list_current(int sid, cbs_func_t func, void *arg){
  * Shows the next CBS process that will be run.
  */
 void cbs_list_next(int sid, cbs_func_t func, void *arg){
-
+	struct snap_bucket bucket = buffer.buckets[sid];
+	int i = 0;
+	struct cbs_proc *process = bucket.history;
+	while (i < bucket.bucket_depth){
+		if (process->is_next == 1){
+			func(process, arg);
+			break;
+		} else {
+			process = process->next;
+			i++;
+		}
+	}
 }
 
 /*
@@ -107,7 +143,17 @@ void cbs_list_next(int sid, cbs_func_t func, void *arg){
  * These are called in no particular order.
  */
 void cbs_list_rest(int sid, cbs_func_t func, void *arg){
-
+	struct snap_bucket bucket = buffer.buckets[sid];
+	int i = 0;
+	struct cbs_proc *process = bucket.history;
+	while(i < bucket.bucket_depth){
+		if (process->is_next == 0 && process->state != CBS_STATE_RUNNING){
+			func(process, arg);
+		} else {
+			process = process->next;
+			i++;
+		}
+	}
 }
 
 /*

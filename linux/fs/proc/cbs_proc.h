@@ -8,9 +8,14 @@
  * snapshots
  */
 #define CBS_MAX_HISTORY 64
+#define SNAP_MAX_TRIGGERS 8
 
 
-int cbs_snap(char *buf);
+//used in debuggin the proc interface
+int cbs_snap(char *buf, int bucket_num);
+struct snap_proc_data {
+	int num;
+};
 /*
  * An opaque type that represents a CBS task.
  */

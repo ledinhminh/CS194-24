@@ -1,6 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/syscalls.h>
+
 #include <../../../fs/proc/cbs_proc.h> //need for cbs_proc_t, seems hacky...
 #define CBS_MAX_HISTORY 64
 #define SNAP_MAX_TRIGGERS 8
@@ -223,6 +224,9 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 		//set the device of a bucket
 		buffer.buckets[index].device = kern_device[index];
 		printk("Snap for device %i\n",kern_device[index]);
+
+		//make the bucket valid
+		buffer.buckets[index].valid = 1;
 	}
 
 	//don't forget to unlock

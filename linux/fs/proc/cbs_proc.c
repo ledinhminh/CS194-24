@@ -51,26 +51,22 @@ int cbs_snap(char *buf, int bucket_num)
 {
 	int len=0;
 
-	// int index;
-
-	// for(index = 0; index < buffer.num_buckets; index++){
-		struct snap_bucket bucket = buffer.buckets[bucket_num];
-		len += sprintf(buf+len, "Bucket #%i\n", bucket_num);
-		if (bucket.s_event == SNAP_EVENT_CBS_SCHED){
-			len += sprintf(buf+len, "EVENT: CBS\n");
-		} else {
-			len += sprintf(buf+len, "EVEVNT: UNKNOWN\n");
-		}
-		if (bucket.s_trig == SNAP_TRIG_AEDGE){
-			len += sprintf(buf+len, "TRIG: AEDGE\n");
-		} else if (bucket.s_trig == SNAP_TRIG_BEDGE){
-			len += sprintf(buf+len, "TRIG: BEDGE\n");
-		} else {
-			len += sprintf(buf+len, "TRIG: UKNOWN\n");
-		}
-		len += sprintf(buf+len, "DEPTH: %i\n", bucket.bucket_depth);
-		len += sprintf(buf+len, "\n");
-	// }
+	struct snap_bucket bucket = buffer.buckets[bucket_num];
+	len += sprintf(buf+len, "Bucket #%i\n", bucket_num);
+	if (bucket.s_event == SNAP_EVENT_CBS_SCHED){
+		len += sprintf(buf+len, "EVENT: CBS\n");
+	} else {
+		len += sprintf(buf+len, "EVEVNT: UNKNOWN\n");
+	}
+	if (bucket.s_trig == SNAP_TRIG_AEDGE){
+		len += sprintf(buf+len, "TRIG: AEDGE\n");
+	} else if (bucket.s_trig == SNAP_TRIG_BEDGE){
+		len += sprintf(buf+len, "TRIG: BEDGE\n");
+	} else {
+		len += sprintf(buf+len, "TRIG: UKNOWN\n");
+	}
+	len += sprintf(buf+len, "DEPTH: %i\n", bucket.bucket_depth);
+	len += sprintf(buf+len, "\n");
 
 	return len;
 }

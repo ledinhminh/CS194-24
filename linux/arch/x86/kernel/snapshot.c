@@ -71,7 +71,7 @@ int add_cbs_proc(int bucket_num, struct cbs_proc p){
 	if(bucket->bucket_depth >= CBS_MAX_HISTORY)
 		return -1;
 
-	//add the proc to the end of the list
+	//add the proc to the end of the listpp
 	proc_entry = bucket->history;
 	prev_proc_entry = NULL;
 	for(i = 0; i < bucket->bucket_depth; i++){
@@ -225,6 +225,7 @@ void snap_add_ready(int cpu_id, long proc_id, long creation, long start,
 	for(i = 0; i < buffer.num_buckets; i++){
 		if (bucket_list[i].device == cpu_id){
 			//function below already locks
+			printk("adding to %i that ended %i\n", i, end);
 			add_cbs_proc(i, to_add);
 		}
 	}
@@ -237,9 +238,11 @@ void fill_snap(void){
 	int j;
 	//using bucket number for cpu_id...
 	//this only works if you ran snap_test beforehand
+	printk("bucket number %i\n", buffer.num_buckets);
 	for (i = 0; i < buffer.num_buckets; i++){
+		printk("filling bucket: %i\n", i);
 		for (j = 0; j < 10; j++){
-			snap_add_ready(i, j, 111, 222, 333 - j, 444, 555);
+			snap_add_ready(i, j, 111, 222, 333-j, 444-i, 555);
 		}
 	}
 }

@@ -193,9 +193,8 @@ void cbs_list_rest(int sid, cbs_func_t func, void *arg){
 	while(i < bucket.bucket_depth){
 		if (process->is_next == 0 && process->state != CBS_STATE_RUNNING){
 			func(process, arg);
-		} else {
-			process = process->next;
-		}
+		} 
+		process = process->next;
 		i++;
 	}
 }

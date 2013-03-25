@@ -37,5 +37,5 @@ struct http_server {
 struct http_server *http_server_new(palloc_env env, short port);
 
 // added
-//int listen_on_port(short port);
+void* start_thread(void*);
 #endif

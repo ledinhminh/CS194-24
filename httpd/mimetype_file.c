@@ -9,8 +9,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define BUF_COUNT 4096
-
 static int http_get(struct mimetype *mt, struct http_session *s);
 
 struct mimetype *mimetype_file_new(palloc_env env, const char *fullpath) {

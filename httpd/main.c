@@ -84,8 +84,7 @@ int main(int argc, char **argv)
     }
 
     if (mterr != 0) {
-      perror("unrecoverable error while processing a client");
-      abort();
+      DEBUG("unrecoverable error while processing a client");
     }
 
 cleanup:

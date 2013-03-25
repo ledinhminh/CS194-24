@@ -29,9 +29,15 @@ int main(int argc, char **argv)
           tv.tv_sec
     );
 
-  for(i = 0; i <= 1000; i++){
-    fprintf(stdout, "%d,\n ", i);
-    usleep(1000);
+  for(i = 1; i <= 4000; i++){
+    fprintf(stdout, "a");
+    if(i % 80 == 0){
+      fprintf(stdout, "\n");
+    }
+    if(i % 1500 == 0){
+      fflush(stdout);
+    }
+    usleep(2000);
   }
 
   return 0;

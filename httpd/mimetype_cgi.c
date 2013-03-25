@@ -12,8 +12,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define BUF_COUNT 4096
-
 // Defined in main.c
 #define PORT 8088
 
@@ -41,31 +39,6 @@ struct mimetype *mimetype_cgi_new(palloc_env env, const char *fullpath) {
 
   return &(mtc->mimetype);
 }
-
-/*
-int is_streaming(const char* disk_buf)
-{
-  const char* end_header;
-  end_header = strstr(disk_buf, "\r\n\r\n");
-  const char* buffering = disk_buf;
-  for(buffering = strstr(disk_buf, "X-Buffering:");
-      buffering != disk_buf && (long)buffering < (long)end_header;
-      buffering = strstr(buffering, "X-Buffering:")) {
-    const char* endline = strstr(buffering, "\r\n");
-    const char* streaming = strstr(buffering, "Streaming");
-    DEBUG("DB:%ld, B:%ld, E:%ld, S:%ld\n",
-          (long)disk_buf,
-          (long)buffering,
-          (long)endline,
-          (long)streaming);
-    if((long)streaming < (long)endline &&
-       (long)streaming > (long)buffering) {
-      return 1;
-    }
-  }
-  return 0;
-}
-*/
 
 int http_get(struct mimetype *mt, struct http_session *s)
 {
@@ -117,7 +90,6 @@ int http_get(struct mimetype *mt, struct http_session *s)
 
   DEBUG("env_vars=%s\n", env_vars);
 
-  // No, it cannot be O_RDONLY.
   fp = popen(env_vars, "r");
   if (NULL == fp) {
     DEBUG("popen returned NULL; strerror: %s\n", strerror(errno));
@@ -129,21 +101,27 @@ int http_get(struct mimetype *mt, struct http_session *s)
   // Read from disk
   DEBUG("popen()'d, time to read from pipe\n");
 
+  ssize_t total_read = 0;
+  ssize_t total_written = 0;
   while ((readed = read(fd, buf, BUF_COUNT)) > 0) {
     ssize_t written;
+    total_read += readed;
 
     written = 0;
     while (written < readed) {
       ssize_t w;
 
       w = s->write(s, buf + written, readed - written);
-      if (w > 0)
+      if (w > 0) {
         written += w;
+        total_written += written;
+        DEBUG("Read: %ldB, Written: %ldB\n", total_read, total_written);
+      }
     }
   }
 
-  // Finished reading from disk setup for writing to socket
-
+  DEBUG("CGI Finished Executing, Read: %ldB, Written: %ldB\n",
+        total_read, total_written);
   pclose(fp);
   pfree(real_path);
 

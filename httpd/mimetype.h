@@ -6,15 +6,13 @@
 #include "palloc.h"
 #include "http.h"
 
-struct mimetype
-{
-  int (*http_get)(struct mimetype*, struct http_session*, int epoll_fd);
+#define BUF_COUNT 4096
+
+struct mimetype {
+  int (*http_get)(struct mimetype *, struct http_session *);
 };
 
 void mimetype_init(struct mimetype *mt);
-
-int write_to_socket(struct http_session *s, int epoll_fd);
-int write_to_socket_c(struct http_session *s, int epoll_fd, int close_fd);
 
 struct mimetype *mimetype_new(palloc_env env, const char *path);
 

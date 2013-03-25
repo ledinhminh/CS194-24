@@ -18,22 +18,19 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <errno.h>
 
 #include "http.h"
 #include "lambda.h"
 #include "palloc.h"
-#include "debug.h"
 
 #define DEFAULT_BUFFER_SIZE 256
 
-struct string
-{
+struct string {
   size_t size;
   char *data;
 };
 
-int listen_on_port(short port);
+static int listen_on_port(short port);
 static struct http_session *wait_for_client(struct http_server *serv);
 
 static int close_session(struct http_session *s);
@@ -42,8 +39,7 @@ static const char *http_gets(struct http_session *s);
 static ssize_t http_puts(struct http_session *s, const char *m);
 static ssize_t http_write(struct http_session *s, const char *m, size_t l);
 
-struct http_server *http_server_new(palloc_env env, short port)
-{
+struct http_server *http_server_new(palloc_env env, short port) {
   struct http_server *hs;
 
   hs = palloc(env, struct http_server);
@@ -51,6 +47,8 @@ struct http_server *http_server_new(palloc_env env, short port)
     return NULL;
 
   hs->wait_for_client = &wait_for_client;
+
+  hs->fd = listen_on_port(port);
 
   return hs;
 }
@@ -81,18 +79,13 @@ int listen_on_port(short port)
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(port);
-
-  DEBUG("binding to port %d\n", port);
-  if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0)
-  {
+  if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
     perror("Unable to bind to HTTP port");
     close(fd);
     return -1;
   }
 
-  DEBUG("now listening\n");
-  if (listen(fd, MAX_PENDING_CONNECTIONS) < 0)
-  {
+  if (listen(fd, MAX_PENDING_CONNECTIONS) < 0) {
     perror("Unable to listen on HTTP port");
     close(fd);
     return -1;
@@ -101,8 +94,7 @@ int listen_on_port(short port)
   return fd;
 }
 
-struct http_session *wait_for_client(struct http_server *serv)
-{
+struct http_session *wait_for_client(struct http_server *serv) {
   struct http_session *sess;
   struct sockaddr_in addr;
   socklen_t addr_len;
@@ -117,22 +109,14 @@ struct http_session *wait_for_client(struct http_server *serv)
 
   sess->buf = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
   memset(sess->buf, '\0', DEFAULT_BUFFER_SIZE);
-  sess->response = palloc_array(sess, char, DEFAULT_BUFFER_SIZE);
-  memset(sess->response, '\0', DEFAULT_BUFFER_SIZE);
   sess->buf_size = DEFAULT_BUFFER_SIZE;
   sess->buf_used = 0;
-  sess->disk_fd = 0;
-  sess->fd = 0;
-  sess->done_processing = 0;
-  sess->done_reading = 0;
-  sess->done_req_read = 0;
 
   /* Wait for a client to connect. */
   addr_len = sizeof(addr);
   sess->fd = accept(serv->fd, (struct sockaddr *)&addr, &addr_len);
-  if (sess->fd < 0)
-  {
-    DEBUG("unable to accept: %s\n", strerror(errno));
+  if (sess->fd < 0) {
+    perror("Unable to accept on client socket");
     pfree(sess);
     return NULL;
   }
@@ -155,13 +139,11 @@ int close_session(struct http_session *s)
 
 const char *http_gets(struct http_session *s)
 {
-  while (true)
-  {
+  while (true) {
     char *newline;
-    // ssize_t readed;
+    ssize_t readed;
 
-    if ((newline = strstr(s->buf, "\r\n")) != NULL)
-    {
+    if ((newline = strstr(s->buf, "\r\n")) != NULL) {
       char *new;
 
       *newline = '\0';
@@ -176,15 +158,14 @@ const char *http_gets(struct http_session *s)
       return new;
     }
 
-    // readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
-    // if (readed > 0)
-    //   s->buf_used += readed;
+    readed = read(s->fd, s->buf + s->buf_used, s->buf_size - s->buf_used);
+    if (readed > 0)
+      s->buf_used += readed;
 
-    // if (s->buf_used >= s->buf_size)
-    // {
-    //   s->buf_size *= 2;
-    //   s->buf = prealloc(s->buf, s->buf_size);
-    // }
+    if (s->buf_used >= s->buf_size) {
+      s->buf_size *= 2;
+      s->buf = prealloc(s->buf, s->buf_size);
+    }
   }
 
   return NULL;
@@ -195,8 +176,7 @@ ssize_t http_puts(struct http_session *s, const char *m)
   size_t written;
 
   written = 0;
-  while (written < strlen(m))
-  {
+  while (written < strlen(m)) {
     ssize_t writed;
 
     writed = write(s->fd, m + written, strlen(m) - written);

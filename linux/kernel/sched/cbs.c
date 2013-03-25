@@ -27,6 +27,9 @@ static struct sched_cbs_entity* __pick_next_entity_cbs(struct sched_cbs_entity* 
 struct sched_cbs_entity* __pick_last_entity_cbs(struct cbs_rq* cbs_rq);
 void init_cbs_rq(struct cbs_rq *cbs_rq);
 
+//should be in snapshot.c
+void fake_print(void);
+
 /* Some container checking functions. */
 
 static inline int on_cbs_rq(struct sched_cbs_entity *cbs_se)
@@ -133,6 +136,7 @@ static void _task_tick_deadline(struct rb_node* node)
     _task_tick_deadline(node->rb_left);
     _task_tick_deadline(node->rb_right);
 }
+
 
 static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 {

@@ -13,6 +13,8 @@
 
 //used in debuggin the proc interface
 int cbs_snap(char *buf, int bucket_num);
+//actuall exists in snapshot.c
+void fill_snap(void);
 struct snap_proc_data {
 	int num;
 };
@@ -38,10 +40,10 @@ typedef void (*cbs_func_t)(cbs_proc_t, void *);
  */
 enum cbs_state
 {
-    CBS_STATE_HISTORY,   /* The result of a historical run */
-    CBS_STATE_RUNNING,   /* The currently running process */
-    CBS_STATE_READY,     /* Ready to run, in a queue somewhere */
-    CBS_STATE_BLOCKED,   /* Unable to run for any reason */
+    CBS_STATE_HISTORY,   /* The result of a historical run (dequeue)*/
+    CBS_STATE_RUNNING,   /* The currently running process (next_task, ticked)*/
+    CBS_STATE_READY,     /* Ready to run, in a queue somewhere (enqueue)*/
+    CBS_STATE_BLOCKED,   /* Unable to run for any reason (ticked)*/
     CBS_STATE_INVALID,   /* The request was not for a valid process */
 };
 

@@ -351,7 +351,7 @@ int main(int argc, char **argv)
 	threads = palloc_array(env, pthread_t, proc_num);
 	for (i = 0; i < proc_num; i++){
 		pthread_t thread;
-		pthread_create(&thread, NULL, start_thread, (void*) thread_args);
+		pthread_create(&thread, NULL, start_thread, (void*) &thread_args);
 		threads[i] = thread;
 	}
 

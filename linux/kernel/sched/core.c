@@ -3705,6 +3705,7 @@ static bool check_same_owner(struct task_struct *p)
 	return match;
 }
 
+
 static int __sched_setscheduler(struct task_struct *p, int policy,
 				const struct sched_param *param, bool user)
 {

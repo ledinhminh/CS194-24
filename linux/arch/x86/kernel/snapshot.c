@@ -1,6 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/syscalls.h>
+#include <linux/completion.h>
 
 #include <../../../fs/proc/cbs_proc.h> //need for cbs_proc_t, seems hacky...
 #define CBS_MAX_HISTORY 64
@@ -8,7 +9,7 @@
 
 //make sure synced with cbs_proc.c
 struct snap_bucket {
-	int valid;
+	int valid; //need this to know whether we should do bedge or aedge stuff
 	enum snap_event s_event;
 	enum snap_trig s_trig;
 	int device;
@@ -38,6 +39,9 @@ struct cbs_proc {
 
 //mutex for EVERYTHING!!!
 DEFINE_MUTEX(lock);
+DECLARE_COMPLETION(run_lock);
+
+
 int running;
 
 //list of buckets that hold trigger histories
@@ -52,23 +56,31 @@ struct snap_buffer buffer = {
 //adds a cbs_proc_t to the bucket
 int add_cbs_proc(int bucket_num, struct cbs_proc p){
 
+	struct cbs_proc* proc_entry;
+	struct cbs_proc* prev_proc_entry;
+	struct snap_bucket* bucket;
+	int i;
 	mutex_lock(&lock);
+	
 	//make sure bucket exists
 	if(bucket_num >= buffer.num_buckets)
 		return -1;
 
 	//make sure bucket isn't full
-	struct snap_bucket bucket = buffer.buckets[bucket_num];
-	if(bucket.bucket_depth >= CBS_MAX_HISTORY)
+	bucket = &(buffer.buckets[bucket_num]);
+	if(bucket->bucket_depth >= CBS_MAX_HISTORY)
 		return -1;
 
 	//add the proc to the end of the list
-	int i;
-	struct cbs_proc* proc_entry = bucket.history;
-	for(i = 0; i < bucket.bucket_depth - 1; i++){
-		proc_entry = proc_entry->next;		
+	proc_entry = bucket->history;
+	prev_proc_entry = NULL;
+	for(i = 0; i < bucket->bucket_depth; i++){
+		prev_proc_entry = proc_entry;
+		proc_entry = proc_entry->next;
 	}
-	if(proc_entry->next != NULL){
+
+	if(proc_entry != NULL){
+		proc_entry = proc_entry->next;
 		//already exists and invalid history entry, just overwrite it
 		proc_entry = proc_entry->next;
 		proc_entry->pid = p.pid;
@@ -92,23 +104,34 @@ int add_cbs_proc(int bucket_num, struct cbs_proc p){
 		copy->state = p.state;
 		copy->valid = 1;
 		copy->next = NULL;
+		//set the previous entry's next to this copy
+		if(prev_proc_entry != NULL){
+			prev_proc_entry->next = copy;
+		} else {
+			//first thing in the list
+			bucket->history = copy;
+		}
 	}
 
 	//increment the bucket depth
-	bucket.bucket_depth++;
+	bucket->bucket_depth++;
 
 	//gotta remember to free that lock
 	mutex_unlock(&lock);
 	return 0;
 }
 
+//marks every bucket and entry invalid
 void invalidate_buffer(void){
 	int i;
+	struct snap_bucket bucket;
+	struct cbs_proc *proc_entry;
+
 	for(i = 0; i < SNAP_MAX_TRIGGERS; i++){
 		//go through each bucket and invalidate the history
-		struct snap_bucket bucket = bucket_list[i];
+		bucket = bucket_list[i];
 		bucket.valid = 0;
-		struct cbs_proc *proc_entry = bucket.history;
+		proc_entry = bucket.history;
 		
 		if (proc_entry == NULL)
 			return;
@@ -123,38 +146,80 @@ void invalidate_buffer(void){
 	}
 }
 
-void check_done(void){
-	//check if all the snapshots are all done
+void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state){
 	int i;
+	int j;
+	struct snap_bucket *bucket;
+	struct cbs_proc *entry;
 	for (i = 0; i < buffer.num_buckets; i++){
-		struct snap_bucket bucket = bucket_list[i];
-		if(bucket.bucket_depth != CBS_MAX_HISTORY){
-			break;
+		bucket = &(bucket_list[i]);
+		if (bucket->device == cpu_id){
+			for (j = 0; j < bucket->bucket_depth; i++){
+				entry = bucket->history;
+				if (entry->pid == proc_id){
+					entry->state = state;
+				}
+			}
 		}
 	}
-	mutex_lock(&lock);
-	running = 0;
-	mutex_unlock(&lock);
 }
 
+void snap_mark_history(int cpu_id, long proc_id){
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_HISTORY);
+}
+
+void snap_mark_running(int cpu_id, long proc_id){
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_RUNNING);
+}
+
+void snap_mark_blocked(int cpu_id, long proc_id){
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_BLOCKED);
+}
+
+void snap_mark_invalid(int cpu_id, long proc_id){
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_INVALID);
+}
+
+
 //wrapper for adding a proc, to make thing easier in the scheduler
-void snap_add_proc(int bucket_num, long id, long creation, long start,
-			 long end, long pd, long compute, enum cbs_state ste){
+void snap_add_ready(int cpu_id, long proc_id, long creation, long start,
+			 long end, long pd, long compute)
+{
+	int i;
 	struct cbs_proc to_add = {
-		.pid = id,
+		.pid = proc_id,
 		.creation_time = creation,
 		.start_time = start,
 		.end_time = end, //initialize to -1
 		.period = pd,
 		.compute_time = compute,
-		.state = ste,
+		.state = CBS_STATE_READY,
 	};
 
-	add_cbs_proc(bucket_num, to_add);
+	//need add to every bucket that has the same device as cpu_id
+	for(i = 0; i < buffer.num_buckets; i++){
+		if (bucket_list[i].device == cpu_id){
+			add_cbs_proc(i, to_add);
+		}
+	}
+
+}
+
+//fills valid buckets with some history
+void fill_snap(void){
+	int i;
+	int j;
+	//using bucket number for cpu_id...
+	//this only works if you ran snap_test beforehand
+	for (i = 0; i < buffer.num_buckets; i++){
+		for (j = 0; j < 10; j++){
+			snap_add_ready(i, j, 111, 222, 333, 444, 555);
+		}
+	}
 }
 
 asmlinkage long sys_snapshot_join(void){
-	while (running);
+	wait_for_completion(&run_lock);
 	return 0;
 }
 
@@ -163,7 +228,7 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 {
 	//CHECK TO SEE IF ANOTHER SNAPSHOT IS STILL RUNNING
 	//IF IT IS, RETURN EAGAIN
-	//  running is set to off when all snapshots are finished being taken
+	//  running is set to off when a snapshot syscall is finished
 	if(running){
 		return EAGAIN;
 	} else {
@@ -230,6 +295,8 @@ asmlinkage long sys_snapshot(enum snap_event __user *events, int __user *device,
 	}
 
 	//don't forget to unlock
+	running = 0;
+	complete(&run_lock);
 	mutex_unlock(&lock);
 	return 0;
 }

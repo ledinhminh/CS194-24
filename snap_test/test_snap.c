@@ -9,14 +9,14 @@ int main(int argc, char **argv){
 	fprintf(stderr, "calling snapshot\n");
 
 	int i;
-	int n = 8;
+	int n = 2;
 	enum snap_event events[n];
 	int device[n];
 	enum snap_trig triggers[n];
 
 	for(i = 0; i < n; i++){
 		events[i] = SNAP_EVENT_CBS_SCHED;
-		device[i] = 0;
+		device[i] = i;
 		triggers[i] = SNAP_TRIG_BEDGE;
 	}
 

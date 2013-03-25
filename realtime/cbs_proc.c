@@ -60,7 +60,7 @@ int cbs_snap(char *buf, int bucket_num)
 		if (bucket.s_event == SNAP_EVENT_CBS_SCHED){
 			len += sprintf(buf+len, "EVENT: CBS\n");
 		} else {
-			len += sprintf(buf+len, "EVEVNT: UNKNOWN\n");
+			len += sprintf(buf+len, "EVENT: UNKNOWN\n");
 		}
 		if (bucket.s_trig == SNAP_TRIG_AEDGE){
 			len += sprintf(buf+len, "TRIG: AEDGE\n");
@@ -99,10 +99,43 @@ void cbs_list_history(int sid, cbs_func_t func, void *arg){
 	struct snap_bucket bucket = buffer.buckets[sid];
 	//iterator down the list and call func on each proc
 	int i;
+	int swaps;
+	int size;
+
+	size = 0;
+	struct cbs_proc buf[CBS_MAX_HISTORY];
+
 	struct cbs_proc *process = bucket.history;
 	for (i = 0; i < bucket.bucket_depth; i++){
-		func(process, arg);
+		if(process->state == CBS_STATE_HISTORY){
+			buf[size] = *process;
+			size++;
+		}
 		process = process->next;
+	}
+
+
+	//do a bubble sort on end time
+	swaps = 1;
+	struct cbs_proc first;
+	struct cbs_proc second;
+	while (swaps > 0){
+		swaps = 0;
+		for (i = 0; i < size - 1; i++){
+			first = buf[i];
+			second = buf[i+1];
+			//swap if smaller end time in second (older)
+			if (first.end_time > second.end_time){
+				buf[i] = second;
+				buf[i + 1] = first;
+				swaps++;
+			}
+		}
+	}
+
+	for (i = 0; i < size; i++){
+		first = buf[i];
+		func(&first, arg);
 	}
 }
 
@@ -162,8 +195,8 @@ void cbs_list_rest(int sid, cbs_func_t func, void *arg){
 			func(process, arg);
 		} else {
 			process = process->next;
-			i++;
 		}
+		i++;
 	}
 }
 

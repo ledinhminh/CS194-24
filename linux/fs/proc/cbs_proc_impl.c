@@ -52,7 +52,14 @@ int read_snap(char *buf,char **start,off_t offset,int count,int *eof,void *data 
 	int len = 0;
 	struct snap_proc_data *d = data;
 	len = cbs_snap(buf, d->num);
+	len += sprintf(buf+len, "HISTORY ---------------------\n");
 	cbs_list_history(d->num, &get_all, buf);
+	len += sprintf(buf+len, "CURRENT ---------------------\n");
+	cbs_list_current(d->num, &get_all, buf);
+	len += sprintf(buf+len, "NEXT ------------------------\n");
+	cbs_list_next(d->num, &get_all, buf);
+	len += sprintf(buf+len, "REST ------------------------\n");
+	cbs_list_rest(d->num, &get_all, buf);
 	len = strlen(buf);
 	return len;
 }

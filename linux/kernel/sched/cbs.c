@@ -27,8 +27,39 @@ static struct sched_cbs_entity* __pick_next_entity_cbs(struct sched_cbs_entity* 
 struct sched_cbs_entity* __pick_last_entity_cbs(struct cbs_rq* cbs_rq);
 void init_cbs_rq(struct cbs_rq *cbs_rq);
 
-//should be in snapshot.c
-void fake_print(void);
+// usefall calls for stuff in snapshot.c
+
+//should be called whenever something gets dequeued cause thats when we're
+//done with it.
+void snap_mark_history(int cpu_id, long proc_id);
+
+//should be called in task tick
+void snap_mark_running(int cpu_id, long proc_id);
+
+//should be called in task tick when something gets preempted
+void snap_mark_blocked(int cpu_id, long proc_id);
+
+//should be called in task tick
+void snap_mark_next(int cpu_id, long proc_id);
+
+//will probably be used when we do drf
+void snap_mark_invalid(int cpu_id, long proc_id);
+
+
+//should be called whenever something get enqueued
+void snap_add_ready(int cpu_id, long proc_id, long creation, long start,
+             long end, long pd, long compute);
+
+/* Pallmer pseudo-code 
+on_tick:
+  change_task = check_if_next_task_is_different_than_current_task()
+  if (change_task)
+    snapshot_impl(_BEFORE, ...) <-- should be snap_mark_running/next
+  change_process()
+  if (change_task)
+    snapshot_impl(_AFTER, ...) <-- should be snap_mark_running/blocked/next
+  return_to_userspace
+*/
 
 /* Some container checking functions. */
 

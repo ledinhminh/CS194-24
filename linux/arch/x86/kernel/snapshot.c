@@ -122,11 +122,11 @@ int add_cbs_proc(int bucket_num, struct cbs_proc p){
 }
 
 //marks every bucket and entry invalid
+//don't lock in here, only called from sys_snapshot which locks
 void invalidate_buffer(void){
 	int i;
 	struct snap_bucket bucket;
 	struct cbs_proc *proc_entry;
-
 	for(i = 0; i < SNAP_MAX_TRIGGERS; i++){
 		//go through each bucket and invalidate the history
 		bucket = bucket_list[i];
@@ -151,17 +151,21 @@ void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state){
 	int j;
 	struct snap_bucket *bucket;
 	struct cbs_proc *entry;
+	mutex_lock(&lock);
 	for (i = 0; i < buffer.num_buckets; i++){
 		bucket = &(bucket_list[i]);
 		if (bucket->device == cpu_id){
-			for (j = 0; j < bucket->bucket_depth; i++){
-				entry = bucket->history;
+			entry = bucket->history;
+			for (j = 0; j < bucket->bucket_depth; j++){
 				if (entry->pid == proc_id){
 					entry->state = state;
+					break;
 				}
+				entry = entry->next;
 			}
 		}
 	}
+	mutex_unlock(&lock);
 }
 
 void snap_mark_history(int cpu_id, long proc_id){
@@ -178,6 +182,27 @@ void snap_mark_blocked(int cpu_id, long proc_id){
 
 void snap_mark_invalid(int cpu_id, long proc_id){
 	snap_mark_state(cpu_id, proc_id, CBS_STATE_INVALID);
+}
+
+void snap_mark_next(int cpu_id, long proc_id){
+	int i;
+	int j;
+	struct snap_bucket *bucket;
+	struct cbs_proc *entry;
+	mutex_lock(&lock);
+	for (i = 0; i < buffer.num_buckets; i++){
+		bucket = &(bucket_list[i]);
+		if (bucket->device == cpu_id){
+			entry = bucket->history;
+			for (j = 0; j < bucket->bucket_depth; j++){
+				if (entry->pid == proc_id){
+					entry->next = 1;
+					break;
+				}
+				entry = entry->next;
+			}
+		}
+	}
 }
 
 
@@ -199,6 +224,7 @@ void snap_add_ready(int cpu_id, long proc_id, long creation, long start,
 	//need add to every bucket that has the same device as cpu_id
 	for(i = 0; i < buffer.num_buckets; i++){
 		if (bucket_list[i].device == cpu_id){
+			//function below already locks
 			add_cbs_proc(i, to_add);
 		}
 	}
@@ -213,7 +239,7 @@ void fill_snap(void){
 	//this only works if you ran snap_test beforehand
 	for (i = 0; i < buffer.num_buckets; i++){
 		for (j = 0; j < 10; j++){
-			snap_add_ready(i, j, 111, 222, 333, 444, 555);
+			snap_add_ready(i, j, 111, 222, 333 - j, 444, 555);
 		}
 	}
 }

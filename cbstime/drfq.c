@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <signal.h>
+
 
 enum drfq_state
 {
@@ -14,9 +16,11 @@ enum drfq_state
 
 struct drfq
 {
+	//don't need
+	// ----
     pthread_mutex_t lock;
     pthread_cond_t signal;
-
+    // ----
     enum drfq_mode mode;
     int max_entry;
     enum drfq_state *state;
@@ -25,6 +29,33 @@ struct drfq
     size_t max_work_units;
 
     ssize_t waiting;
+
+    /* Signifies if this queue is valid
+     * its set to 1 when it gets created
+     * and then to 0 when request returns -1 to everyone
+     * that way the next time create is called, it knows to create it
+	 */
+	int valid;
+
+    /* Used to lock this drfq */
+    int qlock;
+    pthread_t owner;
+
+    /* Array of tokens, each contains locks for the different threads */
+    struct drf_token* tokens;
+};
+
+/* The reason why I have this array of tokens which then hold locks
+ * is so we don't have to do awful math to get the right lock
+ */
+struct drf_token{
+	struct drf_lock* locks;
+};
+
+struct drf_lock{
+	int state_lock;
+	enum drfq_state state;
+	pthread_t *owner;
 };
 
 int drfq_init(drfq_t *queue)
@@ -34,13 +65,18 @@ int drfq_init(drfq_t *queue)
     q = malloc(sizeof(*q));
     if (q == NULL)
 	return -1;
-
+	
+	//won't need
     pthread_mutex_init(&q->lock, NULL);
     pthread_cond_init(&q->signal, NULL);
+    //----
+
     q->mode = DRFQ_MODE_INIT;
     q->max_entry = 0;
     q->state = NULL;
     q->waiting = -1;
+
+    q->tokens = NULL;
 
     *queue = q;
     return 0;
@@ -53,33 +89,60 @@ int drfq_create(drfq_t *queue, drf_t *drf,
     struct drfq *q;
     q = *queue;
 
-    pthread_mutex_lock(&q->lock);
+    while (true){ //the while loop will stop when we get the lock
+	    //lets try locking the queue first before we do anything
+		if(__sync_bool_compare_and_swap(&(q->qlock), 0, 1)){
+			//nobody has the lock, and we just locked it
+			q->owner = pthread_self();
+			if (q->valid == 0){
+				//queue hasn't been created yet
+			    q->mode = mode;
+			    q->max_entry = max_entry;
+			    q->max_work_units = drf_max_work_units(drf);
 
-    q->mode = mode;
-    q->max_entry = max_entry;
-    q->max_work_units = drf_max_work_units(drf);
-    q->waiting = 0;
+			    q->waiting = 0;
 
-    switch (mode)
-    {
-    case DRFQ_MODE_SINGLE:
-	q->state_alloc = max_entry;
-	break;
-    case DRFQ_MODE_ALL:
-	q->state_alloc = max_entry * q->max_work_units;
-	break;
-    case DRFQ_MODE_INIT:
-	abort();
-	break;
+			    switch (mode)
+			    {
+				    case DRFQ_MODE_SINGLE:
+						q->state_alloc = max_entry;
+						break;
+				    case DRFQ_MODE_ALL:
+						q->state_alloc = max_entry * q->max_work_units;
+						break;
+				    case DRFQ_MODE_INIT:
+						abort();
+						break;
+			    }
+
+			    q->state = malloc(sizeof(*q->state) * q->state_alloc);
+			    for (i = 0; i < q->state_alloc; i++)
+					q->state[i] = DQS_FREE;
+
+				q->valid = 1; 
+			} else {
+				//queue has already been created
+				//don't do anything, just quietly release the lock
+			}
+
+			//set the owner to -1 for consistency sake
+			q->owner = -1; 
+			//free the lock
+			q->qlock = 0;
+			return 0;
+		} else {
+			//its locked, we should check if the thread is still alive
+			if (pthread_kill(q->owner, 0) != 0){
+				//the thread isn't running anymore
+				//we should try unlocking it and start over
+				__sync_bool_compare_and_swap (&(q->qlock), 1, 0);
+				//if it fails, it means someone else unlocked it already
+			} else {
+				//the thread is still running and has the lock
+				//we should do the loop again just in case that thread dies
+			}
+		}
     }
-
-    q->state = malloc(sizeof(*q->state) * q->state_alloc);
-    for (i = 0; i < q->state_alloc; i++)
-	q->state[i] = DQS_FREE;
-
-    pthread_cond_broadcast(&q->signal);
-    pthread_mutex_unlock(&q->lock);
-
     return 0;
 }
 

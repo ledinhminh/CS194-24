@@ -30,36 +30,31 @@ void init_cbs_rq(struct cbs_rq *cbs_rq);
 // usefall calls for stuff in snapshot.c
 
 //should be called whenever something gets dequeued cause thats when we're
-//done with it.
-void snap_mark_history(int cpu_id, long proc_id);
-
-//should be called in task tick
-void snap_mark_running(int cpu_id, long proc_id);
+//done with it. (done)
+void snap_mark_history(int cpu_id, long proc_id, long end_time);
 
 //should be called in task tick when something gets preempted
 void snap_mark_blocked(int cpu_id, long proc_id);
 
-//should be called in task tick
-void snap_mark_next(int cpu_id, long proc_id);
+//should be called in task tick(done)
+// edge = 0 = BEDGE
+// edge = 1 = AEDGE
+void snap_mark_next(int cpu_id, long proc_id, long edge);
 
 //will probably be used when we do drf
 void snap_mark_invalid(int cpu_id, long proc_id);
 
-
-//should be called whenever something get enqueued
+//should be called whenever something get enqueued (done)
 void snap_add_ready(int cpu_id, long proc_id, long creation, long start,
              long end, long pd, long compute);
 
-/* Pallmer pseudo-code 
-on_tick:
-  change_task = check_if_next_task_is_different_than_current_task()
-  if (change_task)
-    snapshot_impl(_BEFORE, ...) <-- should be snap_mark_running/next
-  change_process()
-  if (change_task)
-    snapshot_impl(_AFTER, ...) <-- should be snap_mark_running/blocked/next
-  return_to_userspace
-*/
+//called in task_tick
+void snap_mark_BEDGE_running(int cpu_id, long proc_id);
+void snap_mark_AEDGE_running(int cpu_id, long proc_id);
+//returns 0 if you should do an AEDGE/BEDGE thing -1 otherwise
+int do_AEDGE(int cpu_id);
+int do_BEDGE(int cpu_id);
+
 
 /* Some container checking functions. */
 
@@ -80,7 +75,9 @@ static void enqueue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
     
     printk("cbs: enqueue_task: enqueueing '%s' (%d) on %d; flags=%d\n", p->comm, task_pid_nr(p), rq->cpu, flags);
     printk("cbs: enqueue_task: deadline=%llu, init_budget=%llu\n", cbs_se->deadline, cbs_se->init_budget);
-    
+    //for snapshotting
+    snap_add_ready(rq->cpu, task_pid_nr(p), rq->clock_task, -1, -1, p->cbs.init_period, 0);
+
     __enqueue_entity_cbs(&rq->cbs, &p->cbs);
     
     // Why do we need to do this? No one knows.
@@ -95,8 +92,10 @@ static void dequeue_task_cbs(struct rq *rq, struct task_struct *p, int flags)
 {
     printk("cbs: dequeue_task: dequeueing '%s' (%d) on %d, flags=%d\n", p->comm,task_pid_nr(p), rq->cpu, flags);
     
+    snap_mark_history(rq->cpu, task_pid_nr(p), rq->clock_task);
     __dequeue_entity_cbs(&rq->cbs, &p->cbs);
     
+
     dec_nr_running(rq);
 }
 
@@ -171,6 +170,16 @@ static void _task_tick_deadline(struct rb_node* node)
 
 static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
 {
+    //take a snap at the beginning for BEDGE....
+    if (do_BEDGE(rq->cpu) == 0){
+        snap_mark_BEDGE_running(rq->cpu, task_pid_nr(p));
+
+        //zomg... you gotta be kidding me...just to figure out whats next X_x
+        struct sched_cbs_entity* cbs_se = __pick_first_entity_cbs(&rq->cbs);
+        struct task_struct* n = container_of(cbs_se, struct task_struct, cbs);
+        snap_mark_next(rq->cpu, task_pid_nr(n), 0);
+    }
+
     // A tick of budget is used, for the current task.
     p->cbs.curr_budget--;
     
@@ -202,6 +211,17 @@ static void task_tick_cbs(struct rq *rq, struct task_struct *p, int queued)
     }
     if (0 == p->cbs.curr_budget % 10) {
         printk("cbs: task_tick: budget now %llu\n", p->cbs.curr_budget);
+    }
+
+    //take a snap at the beginning for BEDGE....
+    if (do_AEDGE(rq->cpu) == 0){
+        snap_mark_AEDGE_running(rq->cpu, task_pid_nr(p));
+        //zomg... you gotta be kidding me...just to figure out whats next X_x
+        struct sched_cbs_entity* cbs_se = __pick_first_entity_cbs(&rq->cbs);
+        struct task_struct* n = container_of(cbs_se, struct task_struct, cbs);
+        snap_mark_next(rq->cpu, task_pid_nr(n), 1);
+
+        //Still gotta mark blocked the preempted stuff, luckily only have to do that here
     }
 }
 

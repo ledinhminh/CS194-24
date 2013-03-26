@@ -1,6 +1,6 @@
 # A simple real-time application that communicates over shared memory
 # to a controlling process.
-CBSTIME_SRC := ./cbstime/cbs.c ./cbstime/rt.c
+CBSTIME_SRC := ./cbstime/cbs.c ./cbstime/rt.c ./cbstime/drf.c ./cbstime/drfq.c
 CBSTIME_HDR := $(wildcard ./cbstime/*.h)
 CBSTIME_OBJ := $(CBSTIME_SRC:%.c=%.o)
 CBSTIME_OBJ := $(CBSTIME_OBJ:./cbstime/%=./.obj/cbstime.d/%)

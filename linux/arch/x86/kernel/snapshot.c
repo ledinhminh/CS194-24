@@ -53,6 +53,30 @@ struct snap_buffer buffer = {
 	.num_buckets = 0,
 };
 
+int do_AEDGE(int cpu_id){
+	struct snap_bucket *bucket;
+	int i;
+	for (i = 0; i < buffer.num_buckets; i++){
+		bucket = &(bucket_list[i]);
+		if(bucket->device == cpu_id && bucket->s_trig == SNAP_TRIG_AEDGE){
+			return 0;
+		}
+	}
+	return -1;
+}
+
+int do_BEDGE(int cpu_id){
+	struct snap_bucket *bucket;
+	int i;
+	for (i = 0; i < buffer.num_buckets; i++){
+		bucket = &(bucket_list[i]);
+		if(bucket->device == cpu_id && bucket->s_trig == SNAP_TRIG_BEDGE){
+			return 0;
+		}
+	}
+	return -1;
+}
+
 //adds a cbs_proc_t to the bucket
 int add_cbs_proc(int bucket_num, struct cbs_proc p){
 
@@ -146,7 +170,7 @@ void invalidate_buffer(void){
 	}
 }
 
-void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state){
+void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state, long arg){
 	int i;
 	int j;
 	struct snap_bucket *bucket;
@@ -158,8 +182,25 @@ void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state){
 			entry = bucket->history;
 			for (j = 0; j < bucket->bucket_depth; j++){
 				if (entry->pid == proc_id){
+					switch(state){
+						case CBS_STATE_HISTORY:
+							entry->end_time = arg;
+							break;
+						case CBS_STATE_RUNNING:
+							if (arg == 1){
+								//AEDGE came in, check to make sure there wasn't
+								//a BEDGE, otherwsie we might increment twice
+								if (do_BEDGE(cpu_id) != 0){
+									//the cpu did not do a BEDGE, we should increment
+									entry->compute_time++;
+								}
+							} else {
+								//BEDGE came in, need to increment compute_time
+								entry->compute_time++;
+							}
+							break;
+					}
 					entry->state = state;
-					break;
 				}
 				entry = entry->next;
 			}
@@ -168,31 +209,53 @@ void snap_mark_state(int cpu_id, long proc_id, enum cbs_state state){
 	mutex_unlock(&lock);
 }
 
-void snap_mark_history(int cpu_id, long proc_id){
-	snap_mark_state(cpu_id, proc_id, CBS_STATE_HISTORY);
+void snap_mark_history(int cpu_id, long proc_id, long end_time){
+	//pass in the end_time
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_HISTORY, end_time);
 }
 
-void snap_mark_running(int cpu_id, long proc_id){
-	snap_mark_state(cpu_id, proc_id, CBS_STATE_RUNNING);
+void snap_mark_AEDGE_running(int cpu_id, long proc_id){
+	//pass in one to only modify AEDGES
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_RUNNING, 1);
+}
+
+void snap_mark_BEDGE_running(int cpu_id, long proc_id){
+	//pass in one to only modify BEDGES
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_RUNNING, 0);
 }
 
 void snap_mark_blocked(int cpu_id, long proc_id){
-	snap_mark_state(cpu_id, proc_id, CBS_STATE_BLOCKED);
+	//don't really have to pass in anything
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_BLOCKED, 0);
 }
 
 void snap_mark_invalid(int cpu_id, long proc_id){
-	snap_mark_state(cpu_id, proc_id, CBS_STATE_INVALID);
+	snap_mark_state(cpu_id, proc_id, CBS_STATE_INVALID, 0);
 }
 
-void snap_mark_next(int cpu_id, long proc_id){
+
+//pass in edge to signify which edge
+// 0 = BEDGE
+// 1 = AEDGE
+void snap_mark_next(int cpu_id, long proc_id, long edge){
 	int i;
 	int j;
 	struct snap_bucket *bucket;
 	struct cbs_proc *entry;
 	mutex_lock(&lock);
+	enum snap_trig trig;
+
+	//some hackiness because i forgot about bedge and aedge
+	//also didn't feel like declaring BEDGE an AEDGE in cbs.c
+	if (edge == 0){
+		trig = SNAP_TRIG_BEDGE;
+	} else {
+		trig = SNAP_TRIG_AEDGE;
+	}
+
 	for (i = 0; i < buffer.num_buckets; i++){
 		bucket = &(bucket_list[i]);
-		if (bucket->device == cpu_id){
+		if (bucket->device == cpu_id && bucket->s_trig == trig){
 			entry = bucket->history;
 			for (j = 0; j < bucket->bucket_depth; j++){
 				if (entry->pid == proc_id){

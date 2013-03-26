@@ -16,19 +16,12 @@ enum drfq_state
 
 struct drfq
 {
-	//don't need
-	// ----
-    pthread_mutex_t lock;
-    pthread_cond_t signal;
-    // ----
+	/* the mode, single or all */
     enum drfq_mode mode;
+    /* number of tokens basically */
     int max_entry;
-    enum drfq_state *state;
-    size_t state_alloc;
-
+    /* number of threads that can run */
     size_t max_work_units;
-
-    ssize_t waiting;
 
     /* Signifies if this queue is valid
      * its set to 1 when it gets created
@@ -42,20 +35,26 @@ struct drfq
     pthread_t owner;
 
     /* Array of tokens, each contains locks for the different threads */
+    int num_tokens;
     struct drf_token* tokens;
+
+    /* Used by ALL mode */
+    int work_token;
 };
 
 /* The reason why I have this array of tokens which then hold locks
  * is so we don't have to do awful math to get the right lock
  */
 struct drf_token{
+	int uncomplete_locks;
+	int num_locks;
 	struct drf_lock* locks;
 };
 
 struct drf_lock{
 	int state_lock;
 	enum drfq_state state;
-	pthread_t *owner;
+	pthread_t owner;
 };
 
 int drfq_init(drfq_t *queue)
@@ -64,18 +63,10 @@ int drfq_init(drfq_t *queue)
 
     q = malloc(sizeof(*q));
     if (q == NULL)
-	return -1;
-	
-	//won't need
-    pthread_mutex_init(&q->lock, NULL);
-    pthread_cond_init(&q->signal, NULL);
-    //----
+		return -1;
 
     q->mode = DRFQ_MODE_INIT;
     q->max_entry = 0;
-    q->state = NULL;
-    q->waiting = -1;
-
     q->tokens = NULL;
 
     *queue = q;
@@ -85,11 +76,16 @@ int drfq_init(drfq_t *queue)
 int drfq_create(drfq_t *queue, drf_t *drf,
 		int max_entry, enum drfq_mode mode)
 {
-    size_t i;
     struct drfq *q;
     q = *queue;
+    int i;
+    int j;
+    struct drf_lock *lock;
+    struct drf_token *token;
 
-    while (true){ //the while loop will stop when we get the lock
+    // couldn't think of a better way... :/
+    while (true){ 
+    	//the while loop will stop when we get the lock
 	    //lets try locking the queue first before we do anything
 		if(__sync_bool_compare_and_swap(&(q->qlock), 0, 1)){
 			//nobody has the lock, and we just locked it
@@ -99,36 +95,70 @@ int drfq_create(drfq_t *queue, drf_t *drf,
 			    q->mode = mode;
 			    q->max_entry = max_entry;
 			    q->max_work_units = drf_max_work_units(drf);
-
-			    q->waiting = 0;
+			    q->num_tokens = max_entry;
+			    q->tokens = malloc(sizeof(struct drf_token) * max_entry);
+			    q->work_token = 0;
 
 			    switch (mode)
 			    {
 				    case DRFQ_MODE_SINGLE:
-						q->state_alloc = max_entry;
+				    	//Theres only one lock per token since only one thread
+				    	//needs to commit this lock for it to work
+				    	for (i = 0; i < q->num_tokens; i++){
+				    		//create a single drf_lock to populate the token
+				    		lock = malloc(sizeof(struct drf_lock));
+				    		lock->state_lock = 0;
+				    		lock->state = DQS_FREE;
+				    		lock->owner = -1;
+				    		
+				    		token = &(q->tokens[i]);
+				    		token->num_locks = 1;
+				    		token->locks = lock;
+				    	}
 						break;
 				    case DRFQ_MODE_ALL:
-						q->state_alloc = max_entry * q->max_work_units;
+				    	//There's max_entry locks per token since each thread
+				    	//has to finish doing stuff to this token
+				    	for (i = 0; i < q->num_tokens; i++){
+				    		//lock is now an array of max_entry drf_lock
+				    		lock = malloc(sizeof(struct drf_lock) * max_entry);
+
+				    		token = &(q->tokens[i]);
+				    		token->num_locks = q->max_work_units;
+				    		token->locks = lock;
+
+				    		//we should set the state of each of the locks
+				    		for(j = 0; j < token->num_locks; j++){
+				    			//we'll just reuse the pointer
+				    			lock = &(token->locks[j]);
+				    			lock->state_lock = 0;
+				    			lock->state = DQS_FREE;
+				    			lock->owner = -1;
+				    		}
+				    		//so now all the locks in the token are set
+				    	}
 						break;
 				    case DRFQ_MODE_INIT:
+				    	//bad news, you can't create a lock with INIT
 						abort();
 						break;
 			    }
 
-			    q->state = malloc(sizeof(*q->state) * q->state_alloc);
-			    for (i = 0; i < q->state_alloc; i++)
-					q->state[i] = DQS_FREE;
-
+			    //the queue is now valid
 				q->valid = 1; 
 			} else {
 				//queue has already been created
 				//don't do anything, just quietly release the lock
+				//leaving the else here for the awesome comments
 			}
 
 			//set the owner to -1 for consistency sake
-			q->owner = -1; 
+			q->owner = -1;
+
 			//free the lock
 			q->qlock = 0;
+
+			//break out of the loop by returning
 			return 0;
 		} else {
 			//its locked, we should check if the thread is still alive
@@ -149,116 +179,218 @@ int drfq_create(drfq_t *queue, drf_t *drf,
 int drfq_request(drfq_t *queue)
 {
     struct drfq *q;
+    struct drf_token *token;
+    struct drf_lock *lock;
+    struct drf_lock *locks;
+    int i;
+    int j;
+    int k;
     q = *queue;
+    //we only need to grab locks on locks >_<
+    //...you get the idea
 
-    while (true)
-    {
-	int i;
-	int i_free, i_run, i_commit;
-	int ret;
+	//depending on the mode, we need to do different stuff
+	switch(q->mode) {
+		case DRFQ_MODE_SINGLE:
+			//find a token with uncomplete locks
+			for(i = 0; i < q->num_tokens; i++){
+				token = &(q->tokens[i]);
+				//there should only be one lock
+				lock = token->locks;
 
-	pthread_mutex_lock(&q->lock);
-	while (q->mode == DRFQ_MODE_INIT)
-	    pthread_cond_wait(&q->signal, &q->lock);
-	
-	i_free = i_run = i_commit = -1;
-	for (i = q->state_alloc-1; i >= 0; i--)
-	    if (q->state[i] == DQS_FREE)
-		i_free = i;
-	for (i = q->state_alloc-1; i >= 0; i--)
-	    if (q->state[i] == DQS_RUN)
-		i_run = i;
-	for (i = 0; i < q->state_alloc; i++)
-	    if (q->state[i] == DQS_COMMIT)
-		i_commit = i;
+				//lets try grabbing the lock
+				if (__sync_bool_compare_and_swap(&(lock->state_lock), 0, 1)){
+					//we got the lock! lets check its state.
+					//DQS_FREE, we take it and return
+					//DQS_RUN, check the thread 
+					//DQS_COMMIT, keep going...
+					//remember that i is the token number....
+					switch(lock->state){
+						case DQS_FREE:
+							lock->state = DQS_RUN;
+							lock->owner = pthread_self();
+							lock->state_lock = 0;
+							return i;
+						case DQS_RUN:
+							//the thread might be dead, lets make sure....
+							if (pthread_kill(lock->owner, 0) != 0){
+								//thread is dead, we should just take it
+								lock->owner = pthread_self();
+								lock->state_lock = 0;
+								return i;
+							} else {
+								//thread is still alive, we should just continue
+							}
+							break;
+						case DQS_COMMIT:
+							//this token is done, we should just keep going
+							break;
+					}
+				} else {
+					//couldn't grab the lock but the thread might be dead...
+					if (pthread_kill(lock->owner, 0) != 0){
+						//thread is dead, unlock it, start over
+						__sync_bool_compare_and_swap(&(lock->state_lock), 1, 0);
+						//we should try unlocking it and try again from the beginning
+						//by setting i = 0
+						i = 0;
+					}
 
-	if (i_commit == q->state_alloc - 1)
-	{
-	    if (q->waiting == 0)
-		q->waiting = q->max_work_units;
+				}
+			}
 
-	    if (--q->waiting == 0)
-		for (i = 0; i < q->state_alloc; i++)
-		    q->state[i] = DQS_FREE;
+			break; //break for SINGLE case
+		case DRFQ_MODE_ALL:
+			while (true){
+				if (q->work_token == q->num_tokens){
+					return -1;
+				}
 
-	    while (q->waiting != 0)
-		pthread_cond_wait(&q->signal, &q->lock);
+				i = 0; //used if this thread saw itself already
 
-	    pthread_cond_broadcast(&q->signal);
-	    pthread_mutex_unlock(&q->lock);
-	    return -1;
+				//lock is an array of locks
+				token = &(q->tokens[q->work_token]); 
+				locks = token->locks;
+				for(j = 0; j < token->num_locks; j++){
+					lock = &(locks[j]);
+
+					//check if we see ourself
+					if (lock->owner == pthread_self()){
+						i = 1;
+						break;//breaks out of for loop
+					}
+
+					//we haven't seen ourself and this lock 
+					//isn't finished
+					if (i != 1 && lock->state != DQS_COMMIT){
+						//check the rest of the tokens to make sure
+						//we're not there either
+						for (k = j; k < token->num_locks; k++){
+							if (lock->owner == pthread_self()){
+								//we see ourself in the future
+								i = 1;
+								break; //break out of for
+							}
+						}
+
+						//check to see if we saw ourself in the future
+						if (i != 1){
+							//we didn't see ourself in the future,
+							//we still need to do work!
+							//lets try grabbing the lock
+							if (__sync_bool_compare_and_swap(&(lock->state_lock), 0, 1)){
+								//we got the lock! lets check its state.
+								//DQS_FREE, we take it and return
+								//DQS_RUN, check the thread 
+								//DQS_COMMIT, keep going...
+								//remember that i is the token number....
+								switch(lock->state){
+									case DQS_FREE:
+										lock->state = DQS_RUN;
+										lock->owner = pthread_self();
+										lock->state_lock = 0;
+										return q->work_token;
+									case DQS_RUN:
+										//the thread might be dead, lets make sure....
+										if (pthread_kill(lock->owner, 0) != 0){
+											//thread is dead, we should just take it
+											lock->owner = pthread_self();
+											lock->state_lock = 0;
+											return q->work_token;
+										} else {
+											//thread is still alive, we should just continue
+										}
+										break;
+									case DQS_COMMIT:
+										//this token is done, we should just keep going
+										break;
+								}
+							} else {
+								//couldn't grab the lock but the thread might be dead...
+								if (pthread_kill(lock->owner, 0) != 0){
+									//thread is dead, unlock it, start over
+									__sync_bool_compare_and_swap(&(lock->state_lock), 1, 0);
+									//we should try unlocking it and try again from the beginning
+									//by setting i = 0
+								}
+
+							}//end of try grabbing lock if
+						} else {
+							//we saw ourself, break out of for loop
+							break;
+						}//end of we haven't seen ourselves if
+
+					}//end of if I haven't seen myself and the lock isn't committed
+
+				}//end of lock iteration
+
+				//didn't see a single lock we should take
+				//we should loop until we do or until everything is done
+			}//end while
+			break;
+		case DRFQ_MODE_INIT:
+			abort();
+			break;
+
 	}
 
-	ret = -1;
-	if (i_free != -1)
-	{
-	    switch (q->mode)
-	    {
-	    case DRFQ_MODE_SINGLE:
-		ret = i_free;
-		break;
-	    case DRFQ_MODE_ALL:
-		if (i_run == -1)
-		    ret = i_free / q->max_work_units;
-
-		if (i_free / q->max_work_units == i_run / q->max_work_units)
-		    ret = i_free / q->max_work_units;
-		break;
-	    case DRFQ_MODE_INIT:
-		abort();
-		break;
-	    }
-	}
-
-	if (ret != -1)
-	{
-	    q->state[i_free] = DQS_RUN;
-	    pthread_mutex_unlock(&q->lock);
-	    return ret;
-	}
-
-	pthread_cond_wait(&q->signal, &q->lock);
-	pthread_mutex_unlock(&q->lock);
-    }
+	//didn't see a single lock we could take
+	return -1;
 }
 
-int drfq_commit(drfq_t *queue, int token)
+//commit work
+//subtract number of uncomplete locks
+int drfq_commit(drfq_t *queue, int token_num)
 {
     struct drfq *q;
-    int i, i_min, i_max;
+    struct drf_token *token;
+    struct drf_lock *lock;
+    struct drf_lock *locks;
+    int uncommitted;
+    int i;
     q = *queue;
 
-    pthread_mutex_lock(&q->lock);
+    switch (q->mode) {
+	    case DRFQ_MODE_SINGLE:
+	    	//get the lock
+			token = &(q->tokens[token_num]);
+			lock = token->locks;
+			//keep trying to grab the lock
+			while (!__sync_bool_compare_and_swap(&(lock->state_lock), 0, 1));
+			lock->state = DQS_COMMIT;
+			lock->state_lock = 0;
+			break;
+	    case DRFQ_MODE_ALL:
+			token = &(q->tokens[token_num]);
+			locks = token->locks;
+			//go through all the locks to find yours
+			for (i = 0; i < token->num_locks; i++){
+				lock = &(locks[i]);
+				if (lock->owner == pthread_self()){
+					//keep trying to grab the lock
+					while (!__sync_bool_compare_and_swap(&(lock->state_lock), 0, 1));
+					lock->state = DQS_COMMIT;
+					lock->state_lock = 0;
+				}
+				//find uncommitted locks
+				if (lock->state != DQS_COMMIT){
+					uncommitted++;
+				}
+			}
 
-    switch (q->mode)
-    {
-    case DRFQ_MODE_SINGLE:
-	i_min = token + 0;
-	i_max = token + 1;
-	break;
-    case DRFQ_MODE_ALL:
-	i_min = (token + 0) * q->max_work_units;
-	i_max = (token + 1) * q->max_work_units;
-	break;
-    case DRFQ_MODE_INIT:
-	abort();
-	break;
+			//check uncommitted locks, it its 0, we need to increment the work_token
+			//but you should check to make sure the work_token is still the same
+			//as the token_num before incrementing it
+			while(!__sync_bool_compare_and_swap(&(q->qlock), 0, 1));
+			if (q->work_token == token_num){
+				q->work_token++;
+			}
+			q->qlock = 0;
+			break;
+    	case DRFQ_MODE_INIT:
+			abort();
+			break;
     }
-
-    for (i = i_min; i < i_max; i++)
-    {
-	if (q->state[i] == DQS_RUN)
-	{
-	    q->state[i] = DQS_COMMIT;
-	    break;
-	}
-    }
-
-    pthread_cond_broadcast(&q->signal);
-    pthread_mutex_unlock(&q->lock);
-
-    if (i == i_max)
-	return -1;
 
     return 0;
 }

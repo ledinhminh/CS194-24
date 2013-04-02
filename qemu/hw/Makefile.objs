@@ -122,6 +122,8 @@ common-obj-$(CONFIG_LAN9118) += lan9118.o
 common-obj-$(CONFIG_NE2000_ISA) += ne2000-isa.o
 common-obj-$(CONFIG_OPENCORES_ETH) += opencores_eth.o
 
+common-obj-$(CONFIG_ETH194_PCI) += eth194.o
+
 # SCSI layer
 common-obj-$(CONFIG_LSI_SCSI_PCI) += lsi53c895a.o
 common-obj-$(CONFIG_MEGASAS_SCSI_PCI) += megasas.o

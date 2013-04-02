@@ -1472,6 +1472,7 @@ PciInfoList *qmp_query_pci(Error **errp)
 }
 
 static const char * const pci_nic_models[] = {
+    "eth194",
     "ne2k_pci",
     "i82551",
     "i82557b",
@@ -1484,6 +1485,7 @@ static const char * const pci_nic_models[] = {
 };
 
 static const char * const pci_nic_names[] = {
+    "eth194",
     "ne2k_pci",
     "i82551",
     "i82557b",

@@ -194,14 +194,14 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 	return size;
 
     fb.df = 0x01;
-    cpu_physical_memory_write(s->curw, buf, 1);
+    cpu_physical_memory_write(s->curw, &fb, 1);
     fb.hf = 0x00;
     cpu_physical_memory_read(s->curw + 2, &fb.nphy, 4);
     fb.cnt = size;
     memcpy(fb.d, buf, size);
-    cpu_physical_memory_write(s->curw, buf, sizeof(fb));
+    cpu_physical_memory_write(s->curw, &fb, sizeof(fb));
     fb.df = 0x03;
-    cpu_physical_memory_write(s->curw, buf, 1);
+    cpu_physical_memory_write(s->curw, &fb, 1);
     s->curw = fb.nphy;
 
     s->rsr = ENRSR_RXOK;

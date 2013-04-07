@@ -551,8 +551,8 @@ static void eth194_class_init(ObjectClass *klass, void *data)
     k->init = pci_eth194_init;
     k->exit = pci_eth194_exit;
     k->romfile = "pxe-ne2k_pci.rom",
-    k->vendor_id = 0x15C6;
-    k->device_id = 0x1234;
+    k->vendor_id = 0x0CA1;
+    k->device_id = 0xE194;
     k->class_id = PCI_CLASS_NETWORK_ETHERNET;
     dc->vmsd = &vmstate_pci_eth194;
     dc->props = eth194_properties;

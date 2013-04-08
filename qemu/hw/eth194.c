@@ -154,7 +154,7 @@ static void eth194_update_irq(ETH194State *s)
 
 static int eth194_buffer_full(ETH194State *s)
 {
-    return s->curr == 0;
+    return s->curw == 0;
 }
 
 int eth194_can_receive(NetClientState *nc)

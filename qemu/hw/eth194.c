@@ -253,7 +253,7 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    eth194_update_irq(s);
 		}
 
-		s->isr = ENISR_TX;
+		s->isr |= ENISR_TX;
 		s->cmd &= ~E8390_TRANS;
 		eth194_update_irq(s);
             }

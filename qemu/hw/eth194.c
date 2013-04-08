@@ -190,7 +190,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     }
 
     /* Check if there's no remaining buffer */
-    if (s->curr == 0)
+    if (s->curw == 0)
 	return size;
 
     fb.df = 0x01;

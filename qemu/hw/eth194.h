@@ -12,7 +12,7 @@ struct eth194_fb {
     uint32_t nphy;
     uint16_t cnt;
     uint8_t d[ETH194_MAX_FRAME_SIZE];
-};
+} __attribute__((packed));
 
 typedef struct ETH194State {
     MemoryRegion io;

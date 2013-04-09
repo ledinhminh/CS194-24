@@ -6,3 +6,6 @@
 /linux/drivers/gpu/vga/*fish*
 my_boot_qemu
 .obj
+/.qemu-configure.stamp
+/qemu/build
+/qemu/install

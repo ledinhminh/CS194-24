@@ -24,6 +24,15 @@ busybox::
 .PHONY: linux
 linux:
 	$(MAKE) -C linux
+.PHONY: qemu
+.qemu-configure.stamp:
+	rm -rf qemu/build qemu/install
+	mkdir -p qemu/build qemu/install
+	cd qemu/build; ../configure --prefix=`pwd`/qemu/install --target-list=x86_64-softmmu
+	touch .qemu-configure.stamp
+qemu: .qemu-configure.stamp
+	$(MAKE) -C qemu/build
+all: qemu
 
 # We can't track dependencies through those recursive builds, but we
 # can kind of do it -- this always rebuilds the subprojects, but only
@@ -38,3 +47,5 @@ clean::
 	$(MAKE) -C linux clean
 	$(MAKE) -C busybox clean
 	rm -rf .lab0/* .obj/*
+	rm -rf qemu/build qemu/install .qemu-configure.stamp
+

@@ -373,28 +373,28 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
             ret = 0x00;
             break;
 	case EN3_CURR0:
-	    ret = (s->curr & 0xffffff00);
+	    ret = (s->curr & ~0xffffff00);
 	    break;
 	case EN3_CURR1:
-	    ret = (s->curr & 0xffff00ff);
+	    ret = (s->curr & ~0xffff00ff);
 	    break;
 	case EN3_CURR2:
-	    ret = (s->curr & 0xff00ffff);
+	    ret = (s->curr & ~0xff00ffff);
 	    break;
 	case EN3_CURR3:
-	    ret = (s->curr & 0x00ffffff);
+	    ret = (s->curr & ~0x00ffffff);
 	    break;
 	case EN3_CURW0:
-	    ret = (s->curw & 0xffffff00);
+	    ret = (s->curw & ~0xffffff00);
 	    break;
 	case EN3_CURW1:
-	    ret = (s->curw & 0xffff00ff);
+	    ret = (s->curw & ~0xffff00ff);
 	    break;
 	case EN3_CURW2:
-	    ret = (s->curw & 0xff00ffff);
+	    ret = (s->curw & ~0xff00ffff);
 	    break;
 	case EN3_CURW3:
-	    ret = (s->curw & 0x00ffffff);
+	    ret = (s->curw & ~0x00ffffff);
 	    break;
         }
     }

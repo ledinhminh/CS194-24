@@ -372,6 +372,18 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
         default:
             ret = 0x00;
             break;
+        case EN0_TCNTLO:
+            ret = s->tcnt & 0x00ff;
+            break;
+        case EN0_TCNTHI:
+            ret = s->tcnt & 0xff00;
+            break;
+        case EN0_RCNTLO:
+            ret = s->rcnt & 0x00ff;
+            break;
+        case EN0_RCNTHI:
+            ret = s->rcnt & 0xff00;
+            break;
 	case EN3_CURR0:
 	    ret = (s->curr & ~0xffffff00);
 	    break;

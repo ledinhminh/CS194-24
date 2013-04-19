@@ -354,12 +354,6 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
         case EN0_RSR:
             ret = s->rsr;
             break;
-	case EN0_RTL8029ID0:
-	    ret = 0x50;
-	    break;
-	case EN0_RTL8029ID1:
-	    ret = 0x43;
-	    break;
 	case EN3_CONFIG0:
 	    ret = 0;		/* 10baseT media */
 	    break;

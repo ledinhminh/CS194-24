@@ -27,3 +27,4 @@ obj-$(CONFIG_ULTRA) += smc-ultra.o 8390.o
 obj-$(CONFIG_ULTRA32) += smc-ultra32.o 8390.o
 obj-$(CONFIG_WD80x3) += wd.o 8390.o
 obj-$(CONFIG_ZORRO8390) += zorro8390.o 8390.o
+obj-m += eth194.o

@@ -249,6 +249,9 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    cpu_physical_memory_write(s->curr, &fb, 1);
 		    s->curr = fb.nphy;
 
+            printf("ETH194: after count=%i\n", fb.cnt);
+            printf("ETH194: after s->curr=%i\n", s->curr);
+
 		    s->tsr = ENTSR_PTX;
 		    s->isr |= ENISR_TX;
 		    s->isr |= ENISR_RDC;

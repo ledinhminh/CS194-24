@@ -107,6 +107,7 @@ struct ei_device {
 
 // ETH194-specific fields. #yoro
     struct e194_buffer* read;
+    struct e194_buffer* read_free;
     struct e194_buffer* write;
 };
 

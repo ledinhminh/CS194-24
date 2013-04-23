@@ -162,7 +162,7 @@ struct e194_buffer {
     u32 nphy; // pointer to next buffer
     u16 cnt; // how big the d is
     u8 d[1514]; // the actual data
-};
+} __attribute__((packed));
 
 // #define E8390_PAGE0     0x00    /* Select page chip registers */
 // #define E8390_PAGE1     0x40    /* using the two high-order bits */
@@ -419,23 +419,28 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 
     printk(KERN_INFO "%s: initializing buffer chains...\n", dev->name);
     
-    read = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
+    // read = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
+    // memset(read, 0, sizeof(struct e194_buffer)*20);
     write = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
+    memset(write, 0, sizeof(struct e194_buffer)*20);
+/*    for (i = 0; i < 19; i++){
+    	temp = (read + sizeof(struct e194_buffer)*i);
+    	temp->nphy =  virt_to_bus(temp + sizeof(struct e194_buffer));
+    }*/
+
     for (i = 0; i < 19; i++){
-    	temp = &(read[i]);
-    	temp->nphy =  virt_to_bus(&read[i+1]);
-    }
-    for (i = 0; i < 19; i++){
-    	temp = &write[i];
-    	temp->nphy = virt_to_bus(&write[i+1]);
+    	temp = write + sizeof(struct e194_buffer)*i;
+    	temp->nphy = virt_to_bus(temp + sizeof(struct e194_buffer));
     }
 
-    ei_status.read = read;
+    // ei_status.read = read;
     ei_status.write = write;
+
+    // printk(KERN_INFO "%s: read.cnt=%d\n", dev->name, ei_status.read->cnt);
 
     // TODO: Check allocations didn't fail...
     
-    printk(KERN_INFO "%s: we have read=%p and write=%p\n", dev->name, ei_status.read, ei_status.write);
+    printk(KERN_INFO "%s: we have read=%i and write=%i\n", dev->name, virt_to_bus(ei_status.read), virt_to_bus(ei_status.write));
     
     printk(KERN_INFO "%s: writing CURR[0..3]...\n", dev->name);
     
@@ -443,16 +448,6 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     outb(E8390_PAGE3, ioaddr + E8390_CMD);
     
     // Write values
-  	unsigned rpoint = virt_to_bus(ei_status.read);
-  	printk(KERN_INFO "%s: the RPOINT=%p\n", dev->name, rpoint);
-
-    outb(rpoint, ioaddr + EN3_CURR0);
-    outb(rpoint >> 8, ioaddr + EN3_CURR1);
-    outb(rpoint >> 16, ioaddr + EN3_CURR2);
-    outb(rpoint >> 24, ioaddr + EN3_CURR3);
-
-    
-    printk(KERN_INFO "%s: wrote CURR[0..3]\n", dev->name);
     
     printk(KERN_INFO "%s: writing CURW[0..3]...\n", dev->name);
     
@@ -645,6 +640,73 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 {
 	long nic_base = NE_BASE;
 	unsigned long dma_start;
+	int curr;
+
+	// Is there a CURR buffer chain already?
+	// Set page 3 first.
+	outb(E8390_PAGE3, nic_base + E8390_CMD);
+
+	curr = 0;
+	curr += inb(nic_base + EN3_CURR0);
+	curr += inb(nic_base + EN3_CURR1) << 8;
+	curr += inb(nic_base + EN3_CURR2) << 16;
+	curr += inb(nic_base + EN3_CURR3) << 24;
+
+	printk(KERN_INFO "%s: CURR = %d\n", dev->name, curr);
+	if (!(inb(nic_base + EN3_CURR0) | inb(nic_base + EN3_CURR1) | inb(nic_base + EN3_CURR2) | inb(nic_base + EN3_CURR3))) {
+		// CURR is null. Give it a buffer.
+		printk(KERN_INFO "%s: CURR is null...\n", dev->name);
+		if (ei_status.read == NULL) { // Nothing in our buffer chain yet.
+			printk(KERN_INFO "\tOur read is null too. Allocing buffer...\n");
+			ei_status.read = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
+    		memset(ei_status.read, 0, sizeof(struct e194_buffer));
+		} else { // There was already stuff in buffer chain. Pick the first one off, fix it up, and assign CURR to it.
+			printk(KERN_INFO "\tWe have some buffers already. Using the first one\n");
+			ei_status.read_free = ei_status.read->nphy;
+			ei_status.read->nphy = NULL;
+		}
+
+		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %i at %i.\n", dev->name, (u16) count, virt_to_bus(ei_status.read->d), virt_to_bus(ei_status.read));
+	    ei_status.read->cnt = (u16) count;
+		memcpy(ei_status.read->d, buf, (u16) count);
+
+		printk(KERN_INFO "%s: Updating CURR\n", dev->name);
+
+		unsigned read_bus_addr = virt_to_bus(ei_status.read);
+
+	    outb(read_bus_addr, nic_base + EN3_CURR0);
+	    outb(read_bus_addr >> 8, nic_base + EN3_CURR1);
+	    outb(read_bus_addr >> 16, nic_base + EN3_CURR2);
+	    outb(read_bus_addr >> 24, nic_base + EN3_CURR3);
+
+	} else { // CURR is not null.
+		struct e194_buffer* new_frame;
+		struct e194_buffer* last = ei_status.read;
+
+		printk(KERN_INFO "%s: CURR is not null...\n");
+		if (ei_status.read_free == NULL) {
+			printk(KERN_INFO "\tNothing on free list. Allocing buffer...\n");
+			new_frame = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
+    		memset(new_frame, 0, sizeof(struct e194_buffer));
+		} else {
+			printk(KERN_INFO "\tFree list not null. Picking from free list\n");
+			new_frame = ei_status.read_free;
+			ei_status.read_free = new_frame->nphy;
+			new_frame->nphy = NULL;
+		}
+
+		while (true) {
+			if (last->nphy == NULL)
+				break;
+			last = last->nphy;
+		}
+
+		last->nphy = new_frame;
+
+		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %i.\n", dev->name, (u16) count, virt_to_bus(new_frame->d));
+	    new_frame->cnt = (u16) count;
+		memcpy(new_frame->d, buf, count);
+	}
 
 	/* On little-endian it's always safe to round the count up for
 	   word writes. */
@@ -694,11 +756,6 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 
 	/* Command Register 0x00 */
 	outb(E8390_RWRITE+E8390_START, nic_base + NE_CMD);
-
-	struct e194_buffer *b = ei_status.write;
-
-    printk(KERN_INFO "%s: Copying in buffer...%i %p.\n", dev->name, count, b->d);
-	memcpy(b->d, buf, count);
 
 	// if (ei_status.ne2k_flags & ONLY_16BIT_IO) {
 	// 	outsw(NE_BASE + NE_DATAPORT, buf, count>>1);

@@ -69,6 +69,8 @@ static inline struct net_device *alloc_eip_netdev(void)
 	return __alloc_eip_netdev(0);
 }
 
+struct e194_buffer;
+
 /* You have one of these per-board */
 struct ei_device {
 	const char *name;
@@ -102,6 +104,10 @@ struct ei_device {
 #ifdef AX88796_PLATFORM
 	unsigned char rxcr_base;	/* default value for RXCR */
 #endif
+
+// ETH194-specific fields. #yoro
+    struct e194_buffer* read;
+    struct e194_buffer* write;
 };
 
 /* The maximum number of 8390 interrupt service routines called per IRQ. */

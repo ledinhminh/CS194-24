@@ -7,7 +7,7 @@ monitor=""
 debug=""
 kvm=""
 memory="-m 512"
-net="-net nic,model=ne2k_pci -net user -redir tcp:8088::8088"
+net="-net nic,model=eth194 -net user -redir tcp:8088::8088"
 smp="-smp 4"
 
 while [[ "$1" != "" ]]

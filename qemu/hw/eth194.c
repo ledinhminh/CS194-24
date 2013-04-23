@@ -242,6 +242,8 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    cpu_physical_memory_read(s->curr, &fb, sizeof(fb));
 		    fb.df = 0x04;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
+            printf("ETH194: count=%i\n", fb.cnt);
+            printf("ETH194: s->curr=%i\n", s->curr);
 		    qemu_send_packet(qemu_get_queue(s->nic), fb.d, fb.cnt);
 		    fb.df = 0x0C;
 		    cpu_physical_memory_write(s->curr, &fb, 1);

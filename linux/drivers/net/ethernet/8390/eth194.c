@@ -33,7 +33,7 @@
 /* The user-configurable values.
    These may be modified when a driver module is loaded.*/
 
-static int debug = 1;			/* 1 normal messages, 0 quiet .. 7 verbose. */
+static int debug = 2;			/* 1 normal messages, 0 quiet .. 7 verbose. */
 
 #define MAX_UNITS 8				/* More are supported, limit only on options */
 /* Used to pass the full-duplex flag, etc. */
@@ -256,6 +256,10 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	long ioaddr;
 	int flags = pci_clone_list[chip_idx].flags;
 
+	struct e194_buffer *read;
+	struct e194_buffer *write;
+	struct e194_buffer *temp;
+
 /* when built into the kernel, we only print version if device is found */
 #ifndef MODULE
 	static int printed_version;
@@ -415,9 +419,20 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 
     printk(KERN_INFO "%s: initializing buffer chains...\n", dev->name);
     
-    ei_status.read = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
-    ei_status.write = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
-    
+    read = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
+    write = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
+    for (i = 0; i < 19; i++){
+    	temp = &(read[i]);
+    	temp->nphy =  virt_to_bus(&read[i+1]);
+    }
+    for (i = 0; i < 19; i++){
+    	temp = &write[i];
+    	temp->nphy = virt_to_bus(&write[i+1]);
+    }
+
+    ei_status.read = read;
+    ei_status.write = write;
+
     // TODO: Check allocations didn't fail...
     
     printk(KERN_INFO "%s: we have read=%p and write=%p\n", dev->name, ei_status.read, ei_status.write);
@@ -427,23 +442,28 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     // Switch to page 3.
     outb(E8390_PAGE3, ioaddr + E8390_CMD);
     
-    // Write values.
-    outb((u8) ei_status.read >> 0, ioaddr + EN3_CURR0);
-    outb((u8) ei_status.read >> 8, ioaddr + EN3_CURR1);
-    outb((u8) ei_status.read >> 16, ioaddr + EN3_CURR2);
-    outb((u8) ei_status.read >> 24, ioaddr + EN3_CURR3);
+    // Write values
+  	unsigned rpoint = virt_to_bus(ei_status.read);
+  	printk(KERN_INFO "%s: the RPOINT=%p\n", dev->name, rpoint);
+
+    outb(rpoint, ioaddr + EN3_CURR0);
+    outb(rpoint >> 8, ioaddr + EN3_CURR1);
+    outb(rpoint >> 16, ioaddr + EN3_CURR2);
+    outb(rpoint >> 24, ioaddr + EN3_CURR3);
+
     
     printk(KERN_INFO "%s: wrote CURR[0..3]\n", dev->name);
     
     printk(KERN_INFO "%s: writing CURW[0..3]...\n", dev->name);
     
-    outb((u8) ei_status.write >> 0, ioaddr + EN3_CURW0);
-    outb((u8) ei_status.write >> 8, ioaddr + EN3_CURW1);
-    outb((u8) ei_status.write >> 16, ioaddr + EN3_CURW2);
-    outb((u8) ei_status.write >> 24, ioaddr + EN3_CURW3);
+  	unsigned wpoint = virt_to_bus(ei_status.write);
+    outb(wpoint >> 0, ioaddr + EN3_CURW0);
+    outb(wpoint >> 8, ioaddr + EN3_CURW1);
+    outb(wpoint >> 16, ioaddr + EN3_CURW2);
+    outb(wpoint >> 24, ioaddr + EN3_CURW3);
     
-    printk(KERN_INFO, "%s: wrote CURW[0..3]...\n", dev->name);
-           
+    printk(KERN_INFO "%s: wrote CURW[0..3]...\n", dev->name);
+
 	return 0;
 
 err_out_free_netdev:
@@ -514,7 +534,7 @@ static void ne2k_pci_reset_8390(struct net_device *dev)
 {
 	unsigned long reset_start_time = jiffies;
 
-	if (debug > 1) printk("%s: Resetting the 8390 t=%ld...",
+	if (debug > 1) printk("%s: Resetting the 8390 t=%ld...\n",
 						  dev->name, jiffies);
 
 	outb(inb(NE_BASE + NE_RESET), NE_BASE + NE_RESET);
@@ -578,6 +598,7 @@ static void ne2k_pci_block_input(struct net_device *dev, int count,
 	long nic_base = dev->base_addr;
 	char *buf = skb->data;
 
+	printk(KERN_INFO "BLOCK INPUT");
 	/* This *shouldn't* happen. If it does, it's the last thing you'll see */
 	if (ei_status.dmaing) {
 		printk("%s: DMAing conflict in ne2k_pci_block_input "
@@ -657,36 +678,54 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 #endif
 	outb(ENISR_RDC, nic_base + EN0_ISR);
 
-   /* Now the normal output. */
+	/* Now the normal output. */
+
+	/* Remote byte count reg WR */
 	outb(count & 0xff, nic_base + EN0_RCNTLO);
+	
+	/* High byte of tx byte count WR */
 	outb(count >> 8,   nic_base + EN0_RCNTHI);
+
+	/* Remote start address reg 0 */
 	outb(0x00, nic_base + EN0_RSARLO);
+
+	/* Remote start address reg 1 */
 	outb(start_page, nic_base + EN0_RSARHI);
+
+	/* Command Register 0x00 */
 	outb(E8390_RWRITE+E8390_START, nic_base + NE_CMD);
-	if (ei_status.ne2k_flags & ONLY_16BIT_IO) {
-		outsw(NE_BASE + NE_DATAPORT, buf, count>>1);
-	} else {
-		outsl(NE_BASE + NE_DATAPORT, buf, count>>2);
-		if (count & 3) {
-			buf += count & ~3;
-			if (count & 2) {
-				__le16 *b = (__le16 *)buf;
 
-				outw(le16_to_cpu(*b++), NE_BASE + NE_DATAPORT);
-				buf = (char *)b;
-			}
-		}
-	}
+	struct e194_buffer *b = ei_status.write;
 
-	dma_start = jiffies;
+    printk(KERN_INFO "%s: Copying in buffer...%i %p.\n", dev->name, count, b->d);
+	memcpy(b->d, buf, count);
 
-	while ((inb(nic_base + EN0_ISR) & ENISR_RDC) == 0)
-		if (jiffies - dma_start > 2) {			/* Avoid clock roll-over. */
-			printk(KERN_WARNING "%s: timeout waiting for Tx RDC.\n", dev->name);
-			ne2k_pci_reset_8390(dev);
-			NS8390_init(dev,1);
-			break;
-		}
+	// if (ei_status.ne2k_flags & ONLY_16BIT_IO) {
+	// 	outsw(NE_BASE + NE_DATAPORT, buf, count>>1);
+	// } else {
+	// 	outsl(NE_BASE + NE_DATAPORT, buf, count>>2);
+	// 	if (count & 3) {
+	// 		buf += count & ~3;
+	// 		if (count & 2) {
+	// 			__le16 *b = (__le16 *)buf;
+
+	// 			outw(le16_to_cpu(*b++), NE_BASE + NE_DATAPORT);
+	// 			buf = (char *)b;
+	// 		}
+	// 	}
+	// }
+
+	// dma_start = jiffies;
+
+	// //while we're not done dma'ing
+	// while ((inb(nic_base + EN0_ISR) & ENISR_RDC) == 0)
+	// 	if (jiffies - dma_start > 2) {			 
+	//		//Avoid clock roll-over. 
+	// 		printk(KERN_WARNING "%s: timeout waiting for Tx RDC.\n", dev->name);
+	// 		ne2k_pci_reset_8390(dev);
+	// 		NS8390_init(dev,1);
+	// 		break;
+	// 	}
 
 	outb(ENISR_RDC, nic_base + EN0_ISR);	/* Ack intr. */
 	ei_status.dmaing &= ~0x01;

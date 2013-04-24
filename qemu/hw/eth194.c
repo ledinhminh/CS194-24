@@ -203,7 +203,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     cpu_physical_memory_write(s->curw, &fb, sizeof(fb));
     fb.df = 0x03;
     cpu_physical_memory_write(s->curw, &fb, 1);
-    printf("ETH194: RECEIVE before curw=%X nphy=%X\n", s->curw, fb.nphy);
+    printf("ETH194: RECEIVE before curw=%X nphy=%X count=%d bytes\n", s->curw, fb.nphy, fb.cnt);
     s->curw = fb.nphy;
     printf("ETH194: RECEIVE after  curw=%X\n", s->curw);
 

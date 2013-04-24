@@ -668,9 +668,13 @@ static void ei_receive(struct net_device *dev)
 	struct e8390_pkt_hdr rx_frame;
 	int num_rx_pages = ei_local->stop_page-ei_local->rx_start_page;
 
+	//so it looks like we receive at most 10 packets in this loop
+	//sorta makes sense since its in interrupt context and don't want
+	//this to do too much
 	while (++rx_pkt_count < 10) {
 		int pkt_len, pkt_stat;
 
+		//----from here-----
 		/* Get the rx page (incoming packet pointer). */
 		ei_outb_p(E8390_NODMA+E8390_PAGE1, e8390_base + E8390_CMD);
 		rxing_page = ei_inb_p(e8390_base + EN1_CURPAG);
@@ -695,6 +699,7 @@ static void ei_receive(struct net_device *dev)
 
 		if (this_frame == rxing_page)	/* Read all the frames? */
 			break;				/* Done for now */
+		//-----to here----- is ne2k stuffs
 
 		current_offset = this_frame << 8;
 		ei_get_8390_hdr(dev, &rx_frame, this_frame);
@@ -717,6 +722,8 @@ static void ei_receive(struct net_device *dev)
 			continue;
 		}
 
+		//check the length of the packet, for us, this is just cnt i think
+		//there's surprisingly a lot of stats that get updated....
 		if (pkt_len < 60  ||  pkt_len > 1518) {
 			if (ei_debug)
 				netdev_dbg(dev, "bogus packet size: %d, status=%#2x nxpg=%#2x\n",
@@ -725,6 +732,7 @@ static void ei_receive(struct net_device *dev)
 			dev->stats.rx_errors++;
 			dev->stats.rx_length_errors++;
 		} else if ((pkt_stat & 0x0F) == ENRSR_RXOK) {
+			//#define ENRSR_RXOK 0x01    /* Received a good packet */
 			struct sk_buff *skb;
 
 			skb = netdev_alloc_skb(dev, pkt_len + 2);
@@ -747,10 +755,12 @@ static void ei_receive(struct net_device *dev)
 					dev->stats.multicast++;
 			}
 		} else {
+			//packet was correct length but the correct bit wasn't set
 			if (ei_debug)
 				netdev_dbg(dev, "bogus packet: status=%#2x nxpg=%#2x size=%d\n",
 					   rx_frame.status, rx_frame.next,
 					   rx_frame.count);
+			
 			dev->stats.rx_errors++;
 			/* NB: The NIC counts CRC, frame and missed errors. */
 			if (pkt_stat & ENRSR_FO)

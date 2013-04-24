@@ -363,12 +363,6 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
         case EN0_RSR:
             ret = s->rsr;
             break;
-	case EN0_RTL8029ID0:
-	    ret = 0x50;
-	    break;
-	case EN0_RTL8029ID1:
-	    ret = 0x43;
-	    break;
 	case EN3_CONFIG0:
 	    ret = 0;		/* 10baseT media */
 	    break;
@@ -381,29 +375,41 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
         default:
             ret = 0x00;
             break;
+        case EN0_TCNTLO:
+            ret = s->tcnt & 0x00ff;
+            break;
+        case EN0_TCNTHI:
+            ret = s->tcnt & 0xff00;
+            break;
+        case EN0_RCNTLO:
+            ret = s->rcnt & 0x00ff;
+            break;
+        case EN0_RCNTHI:
+            ret = s->rcnt & 0xff00;
+            break;
 	case EN3_CURR0:
-	    ret = (s->curr & 0xffffff00);
+	    ret = (s->curr & ~0xffffff00);
 	    break;
 	case EN3_CURR1:
-	    ret = (s->curr & 0xffff00ff);
+	    ret = (s->curr & ~0xffff00ff);
 	    break;
 	case EN3_CURR2:
-	    ret = (s->curr & 0xff00ffff);
+	    ret = (s->curr & ~0xff00ffff);
 	    break;
 	case EN3_CURR3:
-	    ret = (s->curr & 0x00ffffff);
+	    ret = (s->curr & ~0x00ffffff);
 	    break;
 	case EN3_CURW0:
-	    ret = (s->curw & 0xffffff00);
+	    ret = (s->curw & ~0xffffff00);
 	    break;
 	case EN3_CURW1:
-	    ret = (s->curw & 0xffff00ff);
+	    ret = (s->curw & ~0xffff00ff);
 	    break;
 	case EN3_CURW2:
-	    ret = (s->curw & 0xff00ffff);
+	    ret = (s->curw & ~0xff00ffff);
 	    break;
 	case EN3_CURW3:
-	    ret = (s->curw & 0x00ffffff);
+	    ret = (s->curw & ~0x00ffffff);
 	    break;
         }
     }
@@ -528,6 +534,8 @@ static int pci_eth194_init(PCIDevice *pci_dev)
 
     qemu_macaddr_default_if_unset(&s->c.macaddr);
     eth194_reset(s);
+
+    memcpy(s->phys, &s->c.macaddr, 6);
 
     s->nic = qemu_new_nic(&net_eth194_info, &s->c,
                           object_get_typename(OBJECT(pci_dev)), pci_dev->qdev.id, s);

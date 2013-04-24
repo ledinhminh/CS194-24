@@ -164,6 +164,8 @@
 #define MSR_MAJOR		202
 #define CPUID_MAJOR		203
 
+#define QRPC_MAJOR              204     /* QEMU RPC virtual block device */
+
 #define OSST_MAJOR		206	/* OnStream-SCx0 SCSI tape */
 
 #define IBM_TTY3270_MAJOR	227

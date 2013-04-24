@@ -12,6 +12,8 @@ dir /var/www 755 0 0
 nod /dev/console 644 0 0 c 5 1
 nod /dev/loop0 644 0 0 b 7 0
 nod /dev/ttyS0 644 0 0 b 4 64
+nod /dev/qrpc0 644 0 0 b 204 0
+nod /dev/qrpc1 644 0 0 b 204 1
 
 # Binaries provided by busybox -- you probably want to leave all of
 # these in here

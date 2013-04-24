@@ -9,6 +9,7 @@ kvm=""
 memory="-m 512"
 net="-net nic,model=ne2k_pci -net user -redir tcp:8088::8088"
 smp="-smp 4"
+fs="-device qrpc,path=/tmp"
 
 while [[ "$1" != "" ]]
 do
@@ -67,4 +68,4 @@ done
 
 exec ./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $memory $net $smp
+    $initrd $append $serial $monitor $debug $kvm $memory $net $smp $fs

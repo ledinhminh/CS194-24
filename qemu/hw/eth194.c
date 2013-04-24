@@ -526,6 +526,8 @@ static int pci_eth194_init(PCIDevice *pci_dev)
     qemu_macaddr_default_if_unset(&s->c.macaddr);
     eth194_reset(s);
 
+    memcpy(s->phys, &s->c.macaddr, 6);
+
     s->nic = qemu_new_nic(&net_eth194_info, &s->c,
                           object_get_typename(OBJECT(pci_dev)), pci_dev->qdev.id, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->c.macaddr.a);

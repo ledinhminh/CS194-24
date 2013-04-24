@@ -30,7 +30,7 @@
 #include <stdio.h>
 
 /* debug ETH194 card */
-//#define DEBUG_ETH194
+#define DEBUG_ETH194
 
 #define MAX_ETH_FRAME_SIZE 1514
 
@@ -227,7 +227,7 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 
     addr &= 0xf;
 #ifdef DEBUG_ETH194
-    printf("ETH194: write addr=0x%x val=0x%02x\n", addr, val);
+    printf("ETH194: write addr=0x%x val=0x%02x (%02d)\n", addr, val, val);
 #endif
     if (addr == E8390_CMD) {
         /* control register */

@@ -101,7 +101,7 @@
 
 /* use 0 for production, 1 for verification, >2 for debug */
 #ifndef ei_debug
-int ei_debug = 1;
+int ei_debug = 100;
 #endif
 
 /* Index to functions. */

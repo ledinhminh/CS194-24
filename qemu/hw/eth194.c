@@ -161,6 +161,15 @@ int eth194_can_receive(NetClientState *nc)
 {
     ETH194State *s = qemu_get_nic_opaque(nc);
 
+    /* Stop the card whenever we run out of buffer space, alerting the
+     * user by raising an interrupt. */
+    if (!(s->cmd & E8390_STOP) && eth194_buffer_full(s))
+    {
+        s->cmd |= E8390_STOP;
+        s->isr |= ENISR_OVER;
+        eth194_update_irq(s);
+    }
+
     if (s->cmd & E8390_STOP)
         return 1;
     return !eth194_buffer_full(s);
@@ -177,6 +186,15 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 #if defined(DEBUG_ETH194)
     printf("ETH194: received len=%d\n", size);
 #endif
+
+    /* Stop the card whenever we run out of buffer space, alerting the
+     * user by raising an interrupt. */
+    if (!(s->cmd & E8390_STOP) && eth194_buffer_full(s))
+    {
+        s->cmd |= E8390_STOP;
+        s->isr |= ENISR_OVER;
+        eth194_update_irq(s);
+    }
 
     if (s->cmd & E8390_STOP || eth194_buffer_full(s))
         return -1;

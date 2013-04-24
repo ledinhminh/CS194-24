@@ -462,8 +462,19 @@ static irqreturn_t __ei_interrupt(int irq, void *dev_id)
 		if (interrupts & ENISR_OVER)
 			ei_rx_overrun(dev);
 		else if (interrupts & (ENISR_RX+ENISR_RX_ERR)) {
+
+			// DO SOMETHING SPECIAL FOR ETH194 DRIVER...I THINK
+			//------------------------------------------------------------
 			/* Got a good (?) packet. */
-			ei_receive(dev);
+			struct ethtool_drvinfo info;
+			dev->ethtool_ops->get_drvinfo(dev, &info);
+			if (strcmp(&(info.driver), "eth194") != 0){
+				ei_receive(dev);
+			} else {
+				//we need to at least acknowledge the ISR
+				ei_outb_p(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+			}
+			//-----------------------------------------------------------
 		}
 		/* Push the next to-transmit packet through. */
 		if (interrupts & ENISR_TX)

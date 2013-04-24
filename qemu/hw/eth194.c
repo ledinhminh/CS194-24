@@ -178,6 +178,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     printf("ETH194: received len=%d\n", size);
 #endif
 
+
     if (s->cmd & E8390_STOP || eth194_buffer_full(s))
         return -1;
 
@@ -191,7 +192,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 
     /* Check if there's no remaining buffer */
     if (s->curw == 0)
-	return size;
+    return size;
 
     fb.df = 0x01;
     cpu_physical_memory_write(s->curw, &fb, 1);
@@ -202,7 +203,9 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     cpu_physical_memory_write(s->curw, &fb, sizeof(fb));
     fb.df = 0x03;
     cpu_physical_memory_write(s->curw, &fb, 1);
+    printf("ETH194: RECEIVE before curw=%X nphy=%X\n", s->curw, fb.nphy);
     s->curw = fb.nphy;
+    printf("ETH194: RECEIVE after  curw=%X\n", s->curw);
 
     s->rsr = ENRSR_RXOK;
 
@@ -323,10 +326,11 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 	case EN3_CURW2:
 	    s->wv = 0x01;
 	    s->curw = (s->curw & 0xff00ffff) | (val << 16);
-	    break;
+        break;
 	case EN3_CURW3:
 	    s->wv = 0x00;
 	    s->curw = (s->curw & 0x00ffffff) | (val << 24);
+        printf("ETH194: CURW3 curw=%X\n", s->curw);
 	    break;
         }
     }

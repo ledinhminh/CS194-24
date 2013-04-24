@@ -28,6 +28,7 @@
 #define DRV_NAME	"eth194"
 #define DRV_VERSION	"TERRIBLE"
 #define DRV_RELDATE	"1/1/2014"
+#define ETH194_MAX_FRAME_SIZE 1514
 
 
 /* The user-configurable values.
@@ -63,7 +64,7 @@ static int options[MAX_UNITS];
 /* These identify the driver base version and may not be removed. */
 static const char version[] __devinitconst =
 	KERN_INFO DRV_NAME ".c:v" DRV_VERSION " " DRV_RELDATE
-	" D. Becker/P. Gortmaker\n";
+	" CS194-gh\n";
 
 #if defined(__powerpc__)
 #define inl_le(addr)  le32_to_cpu(inl(addr))
@@ -72,8 +73,8 @@ static const char version[] __devinitconst =
 
 #define PFX DRV_NAME ": "
 
-MODULE_AUTHOR("Donald Becker / Paul Gortmaker");
-MODULE_DESCRIPTION("PCI NE2000 clone driver");
+MODULE_AUTHOR("CS194-gh");
+MODULE_DESCRIPTION("ETH194 something or other driver");
 MODULE_LICENSE("GPL");
 
 module_param(debug, int, 0);
@@ -155,13 +156,11 @@ static DEFINE_PCI_DEVICE_TABLE(ne2k_pci_tbl) = {
 MODULE_DEVICE_TABLE(pci, ne2k_pci_tbl);
 
 // ETH194 stuff
-
 struct e194_buffer {
-    u8 df; // device flags
-    u8 hf; // host flags
-    u32 nphy; // pointer to next buffer
-    u16 cnt; // how big the d is
-    u8 d[1514]; // the actual data
+    uint8_t df, hf;//device and host flags
+    uint32_t nphy;//pointer to next buffer
+    uint16_t cnt;//how big the d is
+    uint8_t d[ETH194_MAX_FRAME_SIZE]; //the actual data
 } __attribute__((packed));
 
 // #define E8390_PAGE0     0x00    /* Select page chip registers */
@@ -429,9 +428,11 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     }*/
 
     for (i = 0; i < 19; i++){
-    	temp = write + sizeof(struct e194_buffer)*i;
-    	temp->nphy = virt_to_bus(temp + sizeof(struct e194_buffer));
+    	temp = write + i;//because type is implied
+    	temp->nphy = virt_to_bus(temp + 1);
     }
+
+    printk(KERN_INFO "%s: write->npy=%X", dev->name, write->nphy);
 
     // ei_status.read = read;
     ei_status.write = write;
@@ -440,7 +441,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 
     // TODO: Check allocations didn't fail...
     
-    printk(KERN_INFO "%s: we have read=%i and write=%i\n", dev->name, virt_to_bus(ei_status.read), virt_to_bus(ei_status.write));
+    printk(KERN_INFO "%s: we have read=%X and write=%X\n", dev->name, (uint32_t) virt_to_bus(ei_status.read), (uint32_t) virt_to_bus(ei_status.write));
     
     printk(KERN_INFO "%s: writing CURR[0..3]...\n", dev->name);
     
@@ -452,6 +453,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     printk(KERN_INFO "%s: writing CURW[0..3]...\n", dev->name);
     
   	unsigned wpoint = virt_to_bus(ei_status.write);
+  	printk(KERN_INFO "%s: INIT wpoint=%X\n", dev->name, wpoint);
     outb(wpoint >> 0, ioaddr + EN3_CURW0);
     outb(wpoint >> 8, ioaddr + EN3_CURW1);
     outb(wpoint >> 16, ioaddr + EN3_CURW2);
@@ -639,7 +641,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 				  const unsigned char *buf, const int start_page)
 {
 	long nic_base = NE_BASE;
-	unsigned long dma_start;
+	// unsigned long dma_start;
 	int curr;
 
 	// Is there a CURR buffer chain already?
@@ -662,8 +664,8 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
     		memset(ei_status.read, 0, sizeof(struct e194_buffer));
 		} else { // There was already stuff in buffer chain. Pick the first one off, fix it up, and assign CURR to it.
 			printk(KERN_INFO "\tWe have some buffers already. Using the first one\n");
-			ei_status.read_free = ei_status.read->nphy;
-			ei_status.read->nphy = NULL;
+			ei_status.read_free = bus_to_virt(ei_status.read->nphy);
+			ei_status.read->nphy = (uint32_t) virt_to_bus(NULL);
 		}
 
 		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %i at %i.\n", dev->name, (u16) count, virt_to_bus(ei_status.read->d), virt_to_bus(ei_status.read));
@@ -683,7 +685,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 		struct e194_buffer* new_frame;
 		struct e194_buffer* last = ei_status.read;
 
-		printk(KERN_INFO "%s: CURR is not null...\n");
+		printk(KERN_INFO "%s: CURR is not null...\n", dev->name);
 		if (ei_status.read_free == NULL) {
 			printk(KERN_INFO "\tNothing on free list. Allocing buffer...\n");
 			new_frame = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
@@ -691,17 +693,17 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 		} else {
 			printk(KERN_INFO "\tFree list not null. Picking from free list\n");
 			new_frame = ei_status.read_free;
-			ei_status.read_free = new_frame->nphy;
-			new_frame->nphy = NULL;
+			ei_status.read_free = bus_to_virt(new_frame->nphy);
+			new_frame->nphy = (uint32_t) virt_to_bus(NULL);
 		}
 
 		while (true) {
 			if (last->nphy == NULL)
 				break;
-			last = last->nphy;
+			last = (void *) last->nphy;
 		}
 
-		last->nphy = new_frame;
+		last->nphy = (uint32_t) virt_to_bus(new_frame);
 
 		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %i.\n", dev->name, (u16) count, virt_to_bus(new_frame->d));
 	    new_frame->cnt = (u16) count;

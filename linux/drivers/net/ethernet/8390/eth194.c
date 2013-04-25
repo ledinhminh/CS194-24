@@ -185,7 +185,7 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id);
 static void __eth194_ei_receive(struct net_device *dev);
 
 #define INTR_HANDLER __eth194_ei_interrupt
-#define WRITE_CHAIN_SIZE 20
+#define WRITE_CHAIN_SIZE 1024
 
 // Ugh...
 // For some reason achieving the linkage is tricky.
@@ -270,6 +270,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	struct e194_buffer *read;
 	struct e194_buffer *write;
 	struct e194_buffer *temp;
+  	uint32_t wpoint;
 
 /* when built into the kernel, we only print version if device is found */
 #ifndef MODULE
@@ -442,19 +443,22 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     for (i = 0; i < WRITE_CHAIN_SIZE - 1; i++){
     	temp = write + i; //because type is implied
     	temp->nphy = virt_to_bus(temp + 1);
-        printk(KERN_INFO "%s: buffer at 0x%x has nphy=0x%x\n", dev->name, virt_to_bus(temp), virt_to_bus(temp->nphy));
+        printk(KERN_INFO "%s: buffer at 0x%x has nphy=0x%x\n", dev->name, (uint32_t) virt_to_bus(temp), (uint32_t) virt_to_bus(temp->nphy));
     }
 
     printk(KERN_INFO "%s: write->npy=%X", dev->name, write->nphy);
 
     // ei_status.read = read;
     ei_status.write = write;
+    ei_status.write_free = write;
+    ei_status.write_end = write + WRITE_CHAIN_SIZE - 1;
+    	printk(KERN_INFO "%s: MAKING SURE ITS NULL write_end=0x%X\n", dev->name, (uint32_t) ei_status.write_end->nphy);
 
     // printk(KERN_INFO "%s: read.cnt=%d\n", dev->name, ei_status.read->cnt);
 
     // TODO: Check allocations didn't fail...
     
-    printk(KERN_INFO "%s: we have write=%i\n", dev->name, virt_to_bus(ei_status.write));
+    printk(KERN_INFO "%s: we have write=%i\n", dev->name, (uint32_t) virt_to_bus(ei_status.write));
     
     // printk(KERN_INFO "%s: writing CURR[0..3]...\n", dev->name);
     
@@ -465,14 +469,13 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     
     printk(KERN_INFO "%s: writing CURW[0..3]...\n", dev->name);
     
-  	unsigned wpoint = virt_to_bus(ei_status.write);
-  	printk(KERN_INFO "%s: INIT wpoint=%X\n", dev->name, wpoint);
+  	wpoint = virt_to_bus(ei_status.write);
     outb(wpoint >> 0, ioaddr + EN3_CURW0);
     outb(wpoint >> 8, ioaddr + EN3_CURW1);
     outb(wpoint >> 16, ioaddr + EN3_CURW2);
     outb(wpoint >> 24, ioaddr + EN3_CURW3);
     
-    printk(KERN_INFO "%s: wrote CURW[0..3]...\n", dev->name);
+    printk(KERN_INFO "%s: wrote CURW[0..3]... curw=0x%X\n", dev->name, wpoint);
 
 	return 0;
 
@@ -654,10 +657,11 @@ static void ne2k_pci_block_input(struct net_device *dev, int count,
 static void ne2k_pci_block_output(struct net_device *dev, int count,
 				  const unsigned char *buf, const int start_page)
 {
-    printk(KERN_INFO "%s: begin block_output\n", dev->name);
-	long nic_base = NE_BASE;
-	// unsigned long dma_start;
+	long nic_base;
 	unsigned curr;
+    printk(KERN_INFO "%s: begin block_output\n", dev->name);
+	// unsigned long dma_start;
+	nic_base = NE_BASE;
 
 	// Is there a CURR buffer chain already?
 	// Set page 3 first.
@@ -929,21 +933,22 @@ static void __eth194_ei_receive(struct net_device *dev)
     
     #define ei_debug 100
     
-    unsigned curw;
+    uint32_t curw;
 
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
 
 	curw = 0;
-	curw |= inb(e8390_base + EN3_CURW1);
-	// curw |= inb(e8390_base + EN3_CURW1) << 8;
-	// curw |= inb(e8390_base + EN3_CURW2) << 16;
-	// curw |= inb(e8390_base + EN3_CURW3) << 24;
+	curw += inb(e8390_base + EN3_CURW0);
+	curw += inb(e8390_base + EN3_CURW1) << 8;
+	curw += inb(e8390_base + EN3_CURW2) << 16;
+	curw += inb(e8390_base + EN3_CURW3) << 24;
 
-	printk(KERN_INFO "%s: receiving; CURW=0x%x\n", dev->name, curw);
+	printk(KERN_INFO "%s: receiving; CURW=0x%X\n", dev->name, curw);
     
 	while (++rx_pkt_count < 10) {
 		int pkt_len;
         unsigned pkt_stat;
+	    struct e194_buffer *temp;
 
         printk(KERN_INFO "%s: write head=0x%x\n", dev->name, virt_to_bus(ei_local->write));
         
@@ -984,9 +989,36 @@ static void __eth194_ei_receive(struct net_device *dev)
 		// pkt_stat = rx_frame.status;
         
         // If we're done, bail
+		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
         if (ei_local->write == NULL) {
-            printk(KERN_INFO "%s: buffer chain ended. \n");
+            printk(KERN_INFO "%s: buffer chain ended. \n", dev->name);
             break;
+        }
+
+        // If we hit a not ready buffer, we're dont, bail
+        // we should also shuffle buffers
+        if(!(ei_local->write->df & 0x03)){
+        	if(ei_local->write == ei_local->write_free){
+        		//there's no free buffers... sad
+        	} else {
+        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+        		//they're not the same, we have some free buffers, shuffle time
+        		temp = ei_local->write_free;
+        		while(bus_to_virt(temp->nphy) != ei_local->write){
+        			temp->cnt = 0;
+        			temp->df = 0x00;
+        			temp = bus_to_virt(temp->nphy);
+        		}
+        		//temp points to the one before whatever isn't ready
+
+        		temp->nphy = virt_to_bus(NULL);
+        		ei_local->write_end->nphy = ei_local->write_free;
+        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should not be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+        		ei_local->write_end = temp;
+        		ei_local->write_free = ei_local->write;
+        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+        	}
+        	break;
         }
         
         pkt_len = ei_local->write->cnt;

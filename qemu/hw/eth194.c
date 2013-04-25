@@ -30,7 +30,7 @@
 #include <stdio.h>
 
 /* debug ETH194 card */
-#define DEBUG_ETH194
+// #define DEBUG_ETH194
 
 #define MAX_ETH_FRAME_SIZE 1514
 
@@ -203,7 +203,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     cpu_physical_memory_write(s->curw, &fb, sizeof(fb));
     fb.df = 0x03;
     cpu_physical_memory_write(s->curw, &fb, 1);
-    printf("ETH194: RECEIVE before curw=%X nphy=%X count=%d bytes\n", s->curw, fb.nphy, fb.cnt);
+    // printf("ETH194: RECEIVE before curw=%X nphy=%X count=%d bytes\n", s->curw, fb.nphy, fb.cnt);
     s->curw = fb.nphy;
     printf("ETH194: RECEIVE after  curw=%X\n", s->curw);
 
@@ -245,15 +245,15 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    cpu_physical_memory_read(s->curr, &fb, sizeof(fb));
 		    fb.df = 0x04;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
-            printf("ETH194: count=%i\n", fb.cnt);
-            printf("ETH194: s->curr=%i\n", s->curr);
+            // printf("ETH194: count=%i\n", fb.cnt);
+            // printf("ETH194: s->curr=%i\n", s->curr);
 		    qemu_send_packet(qemu_get_queue(s->nic), fb.d, fb.cnt);
 		    fb.df = 0x0C;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
 		    s->curr = fb.nphy;
 
-            printf("ETH194: after count=%i\n", fb.cnt);
-            printf("ETH194: after s->curr=%i\n", s->curr);
+            // printf("ETH194: after count=%i\n", fb.cnt);
+            // printf("ETH194: after s->curr=%i\n", s->curr);
 
 		    s->tsr = ENTSR_PTX;
 		    s->isr |= ENISR_TX;
@@ -330,7 +330,7 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 	case EN3_CURW3:
 	    s->wv = 0x00;
 	    s->curw = (s->curw & 0x00ffffff) | (val << 24);
-        printf("ETH194: CURW3 curw=%X\n", s->curw);
+        // printf("ETH194: CURW3 curw=%X\n", s->curw);
 	    break;
         }
     }

@@ -108,7 +108,9 @@ struct ei_device {
 // ETH194-specific fields. #yoro
     struct e194_buffer* read;
     struct e194_buffer* read_free;
-    struct e194_buffer* write;
+    struct e194_buffer* write; //last handled buffer 
+    struct e194_buffer* write_free; //first free buffer
+    struct e194_buffer* write_end; //last buffer in chain
 };
 
 /* The maximum number of 8390 interrupt service routines called per IRQ. */

@@ -174,6 +174,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     struct eth194_fb fb;
     uint8_t buf1[60];
 
+    printf("NET DEVICE: RECEIVED FRAME\n");
 #if defined(DEBUG_ETH194)
     printf("ETH194: received len=%d\n", size);
 #endif
@@ -205,7 +206,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     cpu_physical_memory_write(s->curw, &fb, 1);
     // printf("ETH194: RECEIVE before curw=%X nphy=%X count=%d bytes\n", s->curw, fb.nphy, fb.cnt);
     s->curw = fb.nphy;
-    printf("ETH194: RECEIVE after  curw=%X\n", s->curw);
+    // printf("ETH194: RECEIVE after  curw=%X\n", s->curw);
 
     s->rsr = ENRSR_RXOK;
 
@@ -245,13 +246,13 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    cpu_physical_memory_read(s->curr, &fb, sizeof(fb));
 		    fb.df = 0x04;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
-            printf("ETH194: s->curr=0x%X s->curr->nphy=0x%X\n", s->curr, fb.nphy);
+            // printf("ETH194: s->curr=0x%X s->curr->nphy=0x%X\n", s->curr, fb.nphy);
 		    qemu_send_packet(qemu_get_queue(s->nic), fb.d, fb.cnt);
 		    fb.df = 0x0C;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
 		    s->curr = fb.nphy;
 
-            printf("ETH194: AFTER TRANSMIT s->curr=%i\n", s->curr);
+            // printf("ETH194: AFTER TRANSMIT s->curr=%i\n", s->curr);
 
 		    s->tsr = ENTSR_PTX;
 		    s->isr |= ENISR_TX;

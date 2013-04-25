@@ -833,7 +833,7 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 	int interrupts, nr_serviced = 0;
 	struct ei_device *ei_local = netdev_priv(dev);
     
-    printk(KERN_INFO "%s: received intr\n", dev->name);
+    printk(KERN_INFO "%s: INTERRUPT\n", dev->name);
 
 	/*
 	 *	Protect the irq test too.
@@ -860,7 +860,7 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 			   ei_inb_p(e8390_base + EN0_ISR));
 
 	/* !!Assumption!! -- we stay in page 0.	 Don't break this. */
-	printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER START", dev->name);
+	// printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER START", dev->name);
 	while ((interrupts = ei_inb_p(e8390_base + EN0_ISR)) != 0 &&
 	       ++nr_serviced < MAX_SERVICE) {
 		if (!netif_running(dev)) {
@@ -874,9 +874,9 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 			ei_rx_overrun(dev);
 		else if (interrupts & (ENISR_RX+ENISR_RX_ERR)) {
 			/* Got a good (?) packet. */
-			printk(KERN_INFO "%s: RECEIVE START interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
+			printk(KERN_INFO "%s: \tRECEIVE START interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 			__eth194_ei_receive(dev);
-			printk(KERN_INFO "%s: RECEIVE FIN interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
+			// printk(KERN_INFO "%s: RECEIVE FIN interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 		}
 		/* Push the next to-transmit packet through. */
 		if (interrupts & ENISR_TX){
@@ -898,9 +898,8 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 			ei_outb_p(ENISR_RDC, e8390_base + EN0_ISR);
 
 		ei_outb_p(E8390_NODMA+E8390_PAGE0, e8390_base + E8390_CMD);
-		printk(KERN_INFO "%s: SOMETIME IN LOOP interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 	}
-	printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER FIN", dev->name);
+	// printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER FIN", dev->name);
 
 	if (interrupts && ei_debug) {
 		ei_outb_p(E8390_NODMA+E8390_PAGE0+E8390_START, e8390_base + E8390_CMD);
@@ -971,7 +970,6 @@ static void __eth194_tx_intr(struct net_device *dev)
 			ei_local->lasttx = 10, ei_local->txing = 0;
 	}
 
-	printk(KERN_INFO "INTERRUPTED TRANSMIT START\n");
 	//we should set it to be page 3 and the change it back to page 0
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
 	curr = 0;
@@ -981,15 +979,15 @@ static void __eth194_tx_intr(struct net_device *dev)
 	curr += inb(e8390_base + EN3_CURR3) << 24;
 	outb(E8390_PAGE0, e8390_base + E8390_CMD);
 
-	if(curr == 0x0){
-		printk(KERN_INFO "%s: NULL CURR=0x%X\n", dev->name, curr);
-		//curr in device is null, lets check if read's next is null
-		if (ei_local->read->nphy != 0x0){
-			printk(KERN_INFO "%s: READ'S NEXT IS NOT NULL... we need to tell it to do some stuff\n", dev->name);
-		}
-	} else {
-		printk(KERN_INFO "%s: NOT NULL CURR=0x%X\n", dev->name, curr);
-	}
+	// if(curr == 0x0){
+	// 	printk(KERN_INFO "%s: NULL CURR=0x%X\n", dev->name, curr);
+	// 	//curr in device is null, lets check if read's next is null
+	// 	if (ei_local->read->nphy != 0x0){
+	// 		printk(KERN_INFO "%s: READ'S NEXT IS NOT NULL... we need to tell it to do some stuff\n", dev->name);
+	// 	}
+	// } else {
+	// 	printk(KERN_INFO "%s: NOT NULL CURR=0x%X\n", dev->name, curr);
+	// }
 
 	/* Minimize Tx latency: update the statistics after we restart TXing. */
 	if (status & ENTSR_COL)
@@ -1011,7 +1009,7 @@ static void __eth194_tx_intr(struct net_device *dev)
 		if (status & ENTSR_OWC)
 			dev->stats.tx_window_errors++;
 	}
-	printk(KERN_INFO "INTERRUPTED TRANSMIT FIN\n");
+	// printk(KERN_INFO "INTERRUPTED TRANSMIT FIN\n");
 	netif_wake_queue(dev);
 }
 
@@ -1045,7 +1043,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         unsigned pkt_stat;
 	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: write bus_head=0x%X virt_head=0x%X\n", dev->name, virt_to_bus(ei_local->write), ei_local->write);
+        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, virt_to_bus(ei_local->write), ei_local->write);
                 
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
@@ -1056,7 +1054,8 @@ static void __eth194_ei_receive(struct net_device *dev)
 
         // If we hit a not ready buffer, we're dont, bail
         // we should also shuffle buffers
-        if(!(ei_local->write->df & 0x03) || !(ei_local->write->df & 0x01)){
+        if(!(ei_local->write->df & 0x03)){
+        	printk(KERN_INFO "%s: \t\tbuffer isn't ready...", dev->name);
         	if(ei_local->write == ei_local->write_free){
         		//there's no free buffers... sad
         	} else {
@@ -1076,7 +1075,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         		ei_local->write_free = ei_local->write;
         		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         	}
-        	outb(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+			ei_outb_p(ENISR_RDC+ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
         	break;
         }
         
@@ -1114,7 +1113,7 @@ static void __eth194_ei_receive(struct net_device *dev)
 		} else if ((pkt_stat & 0x0F) == ENRSR_RXOK) {
 			struct sk_buff *skb;
             
-            printk(KERN_INFO "%s: packet looks good, proceeding...\n", dev->name);
+            printk(KERN_INFO "%s: \t\tpacket looks good, proceeding...\n", dev->name);
 
 			skb = netdev_alloc_skb(dev, pkt_len + 2);
 			if (skb == NULL) {
@@ -1127,10 +1126,15 @@ static void __eth194_ei_receive(struct net_device *dev)
 				skb_reserve(skb, 2);	/* IP headers on 16 byte boundaries */
 				skb_put(skb, pkt_len);	/* Make room */
 				// ei_block_input(dev, pkt_len, skb, current_offset + sizeof(rx_frame));
-                printk(KERN_INFO "%s: memcpy from d=0x%x to skb at %p...\n", dev->name, ei_local->write->d, skb->data);
+                printk(KERN_INFO "%s: \t\tmemcpy from d=0x%x to skb at %p...\n", dev->name, ei_local->write->d, skb->data);
                 memcpy(skb->data, ei_local->write->d, pkt_len);
+
+                //clear out flags
+                printk(KERN_INFO "%s: \t\tclearing out flags\n", dev->name);
+                ei_local->write->df = 0x00;
+
                 // Throw it away. TODO: ...don't throw it away
-                printk(KERN_INFO "%s: moving to nphy=0x%x\n", dev->name, virt_to_bus(ei_local->write->nphy));
+                printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, virt_to_bus(ei_local->write->nphy));
                 ei_local->write = bus_to_virt(ei_local->write->nphy);
                 
 				skb->protocol = eth_type_trans(skb, dev);
@@ -1162,11 +1166,17 @@ static void __eth194_ei_receive(struct net_device *dev)
 		}
 		// ei_local->current_page = next_frame;
 		// ei_outb_p(next_frame-1, e8390_base+EN0_BOUNDARY);
+		printk(KERN_INFO "%s\n", dev->name);
 	}
-    outb(ENISR_RDC, dev->base_addr + EN0_ISR);	/* Ack intr. */
+
+	// comment: combined this with last outb
+    // outb(ENISR_RDC, dev->base_addr + EN0_ISR);	/* Ack intr. */
+
+
 	/* We used to also ack ENISR_OVER here, but that would sometimes mask
 	   a real overrun, leaving the 8390 in a stopped state with rec'vr off. */
-	outb(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+	ei_outb_p(ENISR_RDC+ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+
 }
 
 static void ne2k_pci_get_drvinfo(struct net_device *dev,

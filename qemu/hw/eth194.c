@@ -245,15 +245,13 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 		    cpu_physical_memory_read(s->curr, &fb, sizeof(fb));
 		    fb.df = 0x04;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
-            // printf("ETH194: count=%i\n", fb.cnt);
             printf("ETH194: s->curr=0x%X s->curr->nphy=0x%X\n", s->curr, fb.nphy);
 		    qemu_send_packet(qemu_get_queue(s->nic), fb.d, fb.cnt);
 		    fb.df = 0x0C;
 		    cpu_physical_memory_write(s->curr, &fb, 1);
 		    s->curr = fb.nphy;
 
-            // printf("ETH194: after count=%i\n", fb.cnt);
-            // printf("ETH194: after s->curr=%i\n", s->curr);
+            printf("ETH194: AFTER TRANSMIT s->curr=%i\n", s->curr);
 
 		    s->tsr = ENTSR_PTX;
 		    s->isr |= ENISR_TX;
@@ -414,7 +412,7 @@ static uint32_t eth194_ioport_read(void *opaque, uint32_t addr)
         }
     }
 #ifdef DEBUG_ETH194
-    printf("ETH194: read addr=0x%x val=%02x\n", addr, ret);
+    printf("ETH194: read addr=0x%X val=%X curr=0x%X\n", addr, ret, s->curr & 0xffffffff);
 #endif
     return ret;
 }

@@ -183,9 +183,10 @@ struct e194_buffer {
 // Function declaration for the unwashed masses
 static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id);
 static void __eth194_ei_receive(struct net_device *dev);
+static void __eth194_tx_intr(struct net_device *dev);
 
 #define INTR_HANDLER __eth194_ei_interrupt
-#define WRITE_CHAIN_SIZE 1024
+#define WRITE_CHAIN_SIZE 1024 
 
 // Ugh...
 // For some reason achieving the linkage is tricky.
@@ -659,13 +660,12 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 {
 	long nic_base;
 	unsigned curr;
-    printk(KERN_INFO "%s: begin block_output\n", dev->name);
 	// unsigned long dma_start;
 	nic_base = NE_BASE;
 
 	// Is there a CURR buffer chain already?
 	// Set page 3 first.
-	outb(E8390_PAGE3, nic_base + E8390_CMD);
+	outb(E8390_PAGE3+E8390_NODMA, nic_base + E8390_CMD);
 
 	curr = 0;
 	curr += inb(nic_base + EN3_CURR0);
@@ -677,18 +677,20 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 	if (!(inb(nic_base + EN3_CURR0) | inb(nic_base + EN3_CURR1) | inb(nic_base + EN3_CURR2) | inb(nic_base + EN3_CURR3))) {
 		// CURR is null. Give it a buffer.
 		printk(KERN_INFO "%s: CURR is null...\n", dev->name);
-		if (ei_status.read == NULL) { // Nothing in our buffer chain yet.
+		if (ei_status.read == 0x0) { // Nothing in our buffer chain yet.
 			printk(KERN_INFO "\tOur read is null too. Allocing buffer...\n");
 			ei_status.read = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
     		memset(ei_status.read, 0, sizeof(struct e194_buffer));
 		} else { // There was already stuff in buffer chain. Pick the first one off, fix it up, and assign CURR to it.
 			printk(KERN_INFO "\tWe have some buffers already. Using the first one\n");
 			ei_status.read_free = bus_to_virt(ei_status.read->nphy);
-			ei_status.read->nphy = (uint32_t) virt_to_bus(NULL);
+			ei_status.read->nphy = 0x0;
 		}
 
 		printk(KERN_INFO "%s: Copying in buffer...%i bytes to 0x%x at 0x%x.\n", dev->name, (u16) count, virt_to_bus(ei_status.read->d), virt_to_bus(ei_status.read));
 	    ei_status.read->cnt = (u16) count;
+	    ei_status.read->df = 0x00;
+	    ei_status.read->hf = 0x00;
 		memcpy(ei_status.read->d, buf, (u16) count);
 
 		printk(KERN_INFO "%s: Updating CURR\n", dev->name);
@@ -705,7 +707,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 		struct e194_buffer* last = ei_status.read;
 
 		printk(KERN_INFO "%s: CURR is not null...\n", dev->name);
-		if (ei_status.read_free == NULL) {
+		if (ei_status.read_free == 0x0) {
 			printk(KERN_INFO "\tNothing on free list. Allocing buffer...\n");
 			new_frame = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
     		memset(new_frame, 0, sizeof(struct e194_buffer));
@@ -717,7 +719,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 		}
 
 		while (true) {
-			if (last->nphy == NULL)
+			if (last->nphy == 0x0)
 				break;
 			last = (void *) last->nphy;
 		}
@@ -805,7 +807,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 	// 		break;
 	// 	}
 
-	outb(ENISR_RDC, nic_base + EN0_ISR);	/* Ack intr. */
+	// outb(ENISR_RDC, nic_base + EN0_ISR);	 Ack intr. 
 	ei_status.dmaing &= ~0x01;
 }
 
@@ -858,6 +860,7 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 			   ei_inb_p(e8390_base + EN0_ISR));
 
 	/* !!Assumption!! -- we stay in page 0.	 Don't break this. */
+	printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER START", dev->name);
 	while ((interrupts = ei_inb_p(e8390_base + EN0_ISR)) != 0 &&
 	       ++nr_serviced < MAX_SERVICE) {
 		if (!netif_running(dev)) {
@@ -871,13 +874,17 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 			ei_rx_overrun(dev);
 		else if (interrupts & (ENISR_RX+ENISR_RX_ERR)) {
 			/* Got a good (?) packet. */
+			printk(KERN_INFO "%s: RECEIVE START interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 			__eth194_ei_receive(dev);
+			printk(KERN_INFO "%s: RECEIVE FIN interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 		}
 		/* Push the next to-transmit packet through. */
-		if (interrupts & ENISR_TX)
-			ei_tx_intr(dev);
-		else if (interrupts & ENISR_TX_ERR)
+		if (interrupts & ENISR_TX){
+			__eth194_tx_intr(dev);
+		} else if (interrupts & ENISR_TX_ERR){
 			ei_tx_err(dev);
+		}
+
 
 		if (interrupts & ENISR_COUNTERS) {
 			dev->stats.rx_frame_errors += ei_inb_p(e8390_base + EN0_COUNTER0);
@@ -890,8 +897,10 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 		if (interrupts & ENISR_RDC)
 			ei_outb_p(ENISR_RDC, e8390_base + EN0_ISR);
 
-		ei_outb_p(E8390_NODMA+E8390_PAGE0+E8390_START, e8390_base + E8390_CMD);
+		ei_outb_p(E8390_NODMA+E8390_PAGE0, e8390_base + E8390_CMD);
+		printk(KERN_INFO "%s: SOMETIME IN LOOP interrupts=0x%X\n", dev->name, ei_inb_p(e8390_base + EN0_ISR));
 	}
+	printk(KERN_INFO "%s: WHILE INTERRUPT HANDLER FIN", dev->name);
 
 	if (interrupts && ei_debug) {
 		ei_outb_p(E8390_NODMA+E8390_PAGE0+E8390_START, e8390_base + E8390_CMD);
@@ -908,6 +917,102 @@ static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id)
 	}
 	spin_unlock(&ei_local->page_lock);
 	return IRQ_RETVAL(nr_serviced > 0);
+}
+/**
+ * ei_tx_intr - transmit interrupt handler
+ * @dev: network device for which tx intr is handled
+ *
+ * We have finished a transmit: check for errors and then trigger the next
+ * packet to be sent. Called with lock held.
+ */
+
+static void __eth194_tx_intr(struct net_device *dev)
+{
+	uint32_t curr;
+
+	unsigned long e8390_base = dev->base_addr;
+	struct ei_device *ei_local = netdev_priv(dev);
+	int status = ei_inb(e8390_base + EN0_TSR);
+
+	outb(E8390_PAGE0, e8390_base + E8390_CMD);
+	outb(ENISR_TX, e8390_base + EN0_ISR); /* Ack intr. */
+	
+	/*
+	 * There are two Tx buffers, see which one finished, and trigger
+	 * the send of another one if it exists.
+	 */
+	ei_local->txqueue--;
+
+	if (ei_local->tx1 < 0) {
+		if (ei_local->lasttx != 1 && ei_local->lasttx != -1)
+			pr_err("%s: bogus last_tx_buffer %d, tx1=%d\n",
+			       ei_local->name, ei_local->lasttx, ei_local->tx1);
+		ei_local->tx1 = 0;
+		if (ei_local->tx2 > 0) {
+			ei_local->txing = 1;
+			NS8390_trigger_send(dev, ei_local->tx2, ei_local->tx_start_page + 6);
+			dev->trans_start = jiffies;
+			ei_local->tx2 = -1,
+			ei_local->lasttx = 2;
+		} else
+			ei_local->lasttx = 20, ei_local->txing = 0;
+	} else if (ei_local->tx2 < 0) {
+		if (ei_local->lasttx != 2  &&  ei_local->lasttx != -2)
+			pr_err("%s: bogus last_tx_buffer %d, tx2=%d\n",
+			       ei_local->name, ei_local->lasttx, ei_local->tx2);
+		ei_local->tx2 = 0;
+		if (ei_local->tx1 > 0) {
+			ei_local->txing = 1;
+			NS8390_trigger_send(dev, ei_local->tx1, ei_local->tx_start_page);
+			dev->trans_start = jiffies;
+			ei_local->tx1 = -1;
+			ei_local->lasttx = 1;
+		} else
+			ei_local->lasttx = 10, ei_local->txing = 0;
+	}
+
+	printk(KERN_INFO "INTERRUPTED TRANSMIT START\n");
+	//we should set it to be page 3 and the change it back to page 0
+	outb(E8390_PAGE3, e8390_base + E8390_CMD);
+	curr = 0;
+	curr += inb(e8390_base + EN3_CURR0);
+	curr += inb(e8390_base + EN3_CURR1) << 8;
+	curr += inb(e8390_base + EN3_CURR2) << 16;
+	curr += inb(e8390_base + EN3_CURR3) << 24;
+	outb(E8390_PAGE0, e8390_base + E8390_CMD);
+
+	if(curr == 0x0){
+		printk(KERN_INFO "%s: NULL CURR=0x%X\n", dev->name, curr);
+		//curr in device is null, lets check if read's next is null
+		if (ei_local->read->nphy != 0x0){
+			printk(KERN_INFO "%s: READ'S NEXT IS NOT NULL... we need to tell it to do some stuff\n", dev->name);
+		}
+	} else {
+		printk(KERN_INFO "%s: NOT NULL CURR=0x%X\n", dev->name, curr);
+	}
+
+	/* Minimize Tx latency: update the statistics after we restart TXing. */
+	if (status & ENTSR_COL)
+		dev->stats.collisions++;
+	if (status & ENTSR_PTX)
+		dev->stats.tx_packets++;
+	else {
+		dev->stats.tx_errors++;
+		if (status & ENTSR_ABT) {
+			dev->stats.tx_aborted_errors++;
+			dev->stats.collisions += 16;
+		}
+		if (status & ENTSR_CRS)
+			dev->stats.tx_carrier_errors++;
+		if (status & ENTSR_FU)
+			dev->stats.tx_fifo_errors++;
+		if (status & ENTSR_CDH)
+			dev->stats.tx_heartbeat_errors++;
+		if (status & ENTSR_OWC)
+			dev->stats.tx_window_errors++;
+	}
+	printk(KERN_INFO "INTERRUPTED TRANSMIT FIN\n");
+	netif_wake_queue(dev);
 }
 
 /**
@@ -933,17 +1038,7 @@ static void __eth194_ei_receive(struct net_device *dev)
     
     #define ei_debug 100
     
-    uint32_t curw;
-
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
-
-	curw = 0;
-	curw += inb(e8390_base + EN3_CURW0);
-	curw += inb(e8390_base + EN3_CURW1) << 8;
-	curw += inb(e8390_base + EN3_CURW2) << 16;
-	curw += inb(e8390_base + EN3_CURW3) << 24;
-
-	printk(KERN_INFO "%s: receiving; CURW=0x%X\n", dev->name, curw);
     
 	while (++rx_pkt_count < 10) {
 		int pkt_len;
@@ -951,46 +1046,10 @@ static void __eth194_ei_receive(struct net_device *dev)
 	    struct e194_buffer *temp;
 
         printk(KERN_INFO "%s: write bus_head=0x%X virt_head=0x%X\n", dev->name, virt_to_bus(ei_local->write), ei_local->write);
-        
-        // None of this applies to us.
-        
-		/* Get the rx page (incoming packet pointer). */
-        
-		// ei_outb_p(E8390_NODMA+E8390_PAGE1, e8390_base + E8390_CMD);
-		// rxing_page = ei_inb_p(e8390_base + EN1_CURPAG);
-		// ei_outb_p(E8390_NODMA+E8390_PAGE0, e8390_base + E8390_CMD);
-
-		/* Remove one frame from the ring.  Boundary is always a page behind. */
-		// this_frame = ei_inb_p(e8390_base + EN0_BOUNDARY) + 1;
-		// if (this_frame >= ei_local->stop_page)
-			// this_frame = ei_local->rx_start_page;
-
-		/* Someday we'll omit the previous, iff we never get this message.
-		   (There is at least one clone claimed to have a problem.)
-
-		   Keep quiet if it looks like a card removal. One problem here
-		   is that some clones crash in roughly the same way.
-		 */
-		// if (ei_debug > 0 &&
-		    // this_frame != ei_local->current_page &&
-		    // (this_frame != 0x0 || rxing_page != 0xFF))
-			// netdev_err(dev, "mismatched read page pointers %2x vs %2x\n",
-				   // this_frame, ei_local->current_page);
-
-		// if (this_frame == rxing_page)	/* Read all the frames? */
-			// break;				/* Done for now */
-            
-        
-        // What does this do? No one knows.
-		// current_offset = this_frame << 8;
-		// ei_get_8390_hdr(dev, &rx_frame, this_frame);
-
-		// pkt_len = rx_frame.count - sizeof(struct e8390_pkt_hdr);
-		// pkt_stat = rx_frame.status;
-        
+                
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
-        if (ei_local->write == NULL) {
+        if (ei_local->write == 0x0) {
             printk(KERN_INFO "%s: buffer chain ended. \n", dev->name);
             break;
         }
@@ -1017,6 +1076,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         		ei_local->write_free = ei_local->write;
         		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         	}
+        	outb(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
         	break;
         }
         
@@ -1104,10 +1164,9 @@ static void __eth194_ei_receive(struct net_device *dev)
 		// ei_outb_p(next_frame-1, e8390_base+EN0_BOUNDARY);
 	}
     outb(ENISR_RDC, dev->base_addr + EN0_ISR);	/* Ack intr. */
-
 	/* We used to also ack ENISR_OVER here, but that would sometimes mask
 	   a real overrun, leaving the 8390 in a stopped state with rec'vr off. */
-	ei_outb_p(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+	outb(ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
 }
 
 static void ne2k_pci_get_drvinfo(struct net_device *dev,

@@ -31,17 +31,12 @@ void do_work(void)
 
 void *worker_thread(void *unused __attribute__((unused)))
 {
-    int i, j;
     int id;
 
     pthread_mutex_lock(&work_lock);
     while ((id = work++) < WORK_NEEDED)
     {
 	pthread_mutex_unlock(&work_lock);
-
-	for (i = 0; i < 10000; i++)
-	    for (j = 0; j < 10000; j++)
-		r = 33 * r ^ id;
 
 	pthread_mutex_lock(&work_lock);
     }

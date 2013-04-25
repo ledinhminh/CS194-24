@@ -452,7 +452,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     ei_status.write = write;
     ei_status.write_free = write;
     ei_status.write_end = write + WRITE_CHAIN_SIZE - 1;
-    	printk(KERN_INFO "%s: MAKING SURE ITS NULL write_end=0x%X\n", dev->name, (uint32_t) ei_status.write_end->nphy);
+    printk(KERN_INFO "%s: MAKING SURE ITS NULL write_end=0x%X\n", dev->name, (uint32_t) ei_status.write_end->nphy);
 
     // printk(KERN_INFO "%s: read.cnt=%d\n", dev->name, ei_status.read->cnt);
 
@@ -950,7 +950,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         unsigned pkt_stat;
 	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: write head=0x%x\n", dev->name, virt_to_bus(ei_local->write));
+        printk(KERN_INFO "%s: write bus_head=0x%X virt_head=0x%X\n", dev->name, virt_to_bus(ei_local->write), ei_local->write);
         
         // None of this applies to us.
         
@@ -997,15 +997,14 @@ static void __eth194_ei_receive(struct net_device *dev)
 
         // If we hit a not ready buffer, we're dont, bail
         // we should also shuffle buffers
-        if(!(ei_local->write->df & 0x03)){
+        if(!(ei_local->write->df & 0x03) || !(ei_local->write->df & 0x01)){
         	if(ei_local->write == ei_local->write_free){
         		//there's no free buffers... sad
         	} else {
-        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+        		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         		//they're not the same, we have some free buffers, shuffle time
         		temp = ei_local->write_free;
         		while(bus_to_virt(temp->nphy) != ei_local->write){
-        			temp->cnt = 0;
         			temp->df = 0x00;
         			temp = bus_to_virt(temp->nphy);
         		}
@@ -1016,7 +1015,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should not be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         		ei_local->write_end = temp;
         		ei_local->write_free = ei_local->write;
-        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+        		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         	}
         	break;
         }
@@ -1026,7 +1025,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         // Switch to page 0 just in case.
         outb(E8390_PAGE0, dev->base_addr + E8390_CMD);
         pkt_stat = inb(dev->base_addr + EN0_RSR);
-        printk(KERN_INFO "%s: pkt_len=%d, pkt_stat=%d\n", dev->name, pkt_len, pkt_stat);
+        // printk(KERN_INFO "%s: pkt_len=%d, pkt_stat=%d\n", dev->name, pkt_len, pkt_stat);
 
 		// next_frame = this_frame + 1 + ((pkt_len+4)>>8);
 
@@ -1070,7 +1069,6 @@ static void __eth194_ei_receive(struct net_device *dev)
 				// ei_block_input(dev, pkt_len, skb, current_offset + sizeof(rx_frame));
                 printk(KERN_INFO "%s: memcpy from d=0x%x to skb at %p...\n", dev->name, ei_local->write->d, skb->data);
                 memcpy(skb->data, ei_local->write->d, pkt_len);
-                outb(ENISR_RDC, dev->base_addr + EN0_ISR);	/* Ack intr. */
                 // Throw it away. TODO: ...don't throw it away
                 printk(KERN_INFO "%s: moving to nphy=0x%x\n", dev->name, virt_to_bus(ei_local->write->nphy));
                 ei_local->write = bus_to_virt(ei_local->write->nphy);
@@ -1105,6 +1103,7 @@ static void __eth194_ei_receive(struct net_device *dev)
 		// ei_local->current_page = next_frame;
 		// ei_outb_p(next_frame-1, e8390_base+EN0_BOUNDARY);
 	}
+    outb(ENISR_RDC, dev->base_addr + EN0_ISR);	/* Ack intr. */
 
 	/* We used to also ack ENISR_OVER here, but that would sometimes mask
 	   a real overrun, leaving the 8390 in a stopped state with rec'vr off. */

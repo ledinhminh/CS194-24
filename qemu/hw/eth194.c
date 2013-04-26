@@ -30,7 +30,7 @@
 #include <stdio.h>
 
 /* debug ETH194 card */
-#define DEBUG_ETH194
+//#define DEBUG_ETH194
 
 #define MAX_ETH_FRAME_SIZE 1514
 
@@ -161,6 +161,15 @@ int eth194_can_receive(NetClientState *nc)
 {
     ETH194State *s = qemu_get_nic_opaque(nc);
 
+    /* Stop the card whenever we run out of buffer space, alerting the
+     * user by raising an interrupt. */
+    if (!(s->cmd & E8390_STOP) && eth194_buffer_full(s))
+    {
+        s->cmd |= E8390_STOP;
+        s->isr |= ENISR_OVER;
+        eth194_update_irq(s);
+    }
+
     if (s->cmd & E8390_STOP)
         return 1;
     return !eth194_buffer_full(s);
@@ -178,6 +187,14 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     printf("ETH194: received len=%d\n", size);
 #endif
 
+    /* Stop the card whenever we run out of buffer space, alerting the
+     * user by raising an interrupt. */
+    if (!(s->cmd & E8390_STOP) && eth194_buffer_full(s))
+    {
+        s->cmd |= E8390_STOP;
+        s->isr |= ENISR_OVER;
+        eth194_update_irq(s);
+    }
 
     if (s->cmd & E8390_STOP || eth194_buffer_full(s))
         return -1;
@@ -192,7 +209,7 @@ ssize_t eth194_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 
     /* Check if there's no remaining buffer */
     if (s->curw == 0)
-    return size;
+	return size;
 
     fb.df = 0x01;
     cpu_physical_memory_write(s->curw, &fb, 1);
@@ -227,7 +244,7 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 
     addr &= 0xf;
 #ifdef DEBUG_ETH194
-    printf("ETH194: write addr=0x%x val=0x%02x (%02d)\n", addr, val, val);
+    printf("ETH194: write addr=0x%x val=0x%02x\n", addr, val);
 #endif
     if (addr == E8390_CMD) {
         /* control register */
@@ -326,7 +343,7 @@ static void eth194_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 	case EN3_CURW2:
 	    s->wv = 0x01;
 	    s->curw = (s->curw & 0xff00ffff) | (val << 16);
-        break;
+	    break;
 	case EN3_CURW3:
 	    s->wv = 0x00;
 	    s->curw = (s->curw & 0x00ffffff) | (val << 24);

@@ -70,6 +70,7 @@ static inline struct net_device *alloc_eip_netdev(void)
 }
 
 struct e194_buffer;
+struct e194_list_node;
 
 /* You have one of these per-board */
 struct ei_device {
@@ -106,13 +107,15 @@ struct ei_device {
 #endif
 
 // ETH194-specific fields. #yoro
-    struct e194_buffer* read;
-    struct e194_buffer* read_free;
-    struct e194_buffer* write; //last handled buffer 
-    struct e194_buffer* write_free; //first free buffer
-    struct e194_buffer* write_end; //last buffer in chain
+    struct e194_buffer *read;
+    struct e194_buffer *read_free;
+    struct e194_buffer *write; //last handled buffer 
+    struct e194_buffer *write_free; //first free buffer
+    struct e194_buffer *write_end; //last buffer in chain
 
-    void* mac_table;
+    void **mac_table; // Array of pointers. Size 256, but no one knows that.
+    struct e194_list_node* active_write_chains;
+    
 };
 
 /* The maximum number of 8390 interrupt service routines called per IRQ. */

@@ -150,7 +150,7 @@ static DEFINE_PCI_DEVICE_TABLE(ne2k_pci_tbl) = {
 	{ 0x12c3, 0x0058, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Holtek_HT80232 },
 	{ 0x12c3, 0x5598, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Holtek_HT80229 },
 	{ 0x8c4a, 0x1980, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Winbond_89C940_8c4a },
-    { 0x0ca1, 0xe194, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_194 },
+    { 0x0ca1, 0xe195, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_194 },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, ne2k_pci_tbl);
@@ -162,6 +162,12 @@ struct e194_buffer {
     uint16_t cnt;//how big the d is
     uint8_t d[ETH194_MAX_FRAME_SIZE]; //the actual data
 } __attribute__((packed));
+
+// Let's not screw around with e194_buffer
+struct e194_list_node {
+    struct e194_buffer* this;
+    struct e194_list_node* next;
+};
 
 // #define E8390_PAGE0     0x00    /* Select page chip registers */
 // #define E8390_PAGE1     0x40    /* using the two high-order bits */
@@ -179,6 +185,10 @@ struct e194_buffer {
 #define EN3_CURW1       0x0B
 #define EN3_CURW2       0x0C
 #define EN3_CURW3       0x0D
+#define EN3_TBLW0       0x01
+#define EN3_TBLW1       0x09
+#define EN3_TBLW2       0x0E
+#define EN3_TBLW3       0x0F
 
 // Function declaration for the unwashed masses
 static irqreturn_t __eth194_ei_interrupt(int irq, void *dev_id);
@@ -271,7 +281,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	struct e194_buffer *read;
 	struct e194_buffer *write;
 	struct e194_buffer *temp;
-  	uint32_t wpoint;
+  	uint32_t wpoint, tbl_ptr;
 
 /* when built into the kernel, we only print version if device is found */
 #ifndef MODULE
@@ -429,6 +439,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	printk("%s: %s found at %#lx, IRQ %d, %pM.\n",
 	       dev->name, pci_clone_list[chip_idx].name, ioaddr, dev->irq,
 	       dev->dev_addr);
+    printk(KERN_INFO "\tThat MAC address isn't right but that's cool.\n");
 
     printk(KERN_INFO "%s: initializing write buffer chain...\n", dev->name);
     
@@ -482,6 +493,16 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     ei_status.mac_table = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
     printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, &ei_status);
     printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, ei_status.mac_table);
+    
+    printk(KERN_INFO "%s: writing TBLW[0..3]...\n", dev->name);
+    
+  	tbl_ptr = virt_to_bus(ei_status.mac_table);
+    outb(tbl_ptr >> 0, ioaddr + EN3_TBLW0);
+    outb(tbl_ptr >> 8, ioaddr + EN3_TBLW1);
+    outb(tbl_ptr >> 16, ioaddr + EN3_TBLW2);
+    outb(tbl_ptr >> 24, ioaddr + EN3_TBLW3);
+    
+    printk(KERN_INFO "%s: wrote TBLW[0..3]... tblw=0x%X\n", dev->name, wpoint);
 
 	return 0;
 
@@ -1290,66 +1311,98 @@ int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *d
 	return len;
 }
 
-int eth_write(struct file *file, const char *buf, int count, void *data){
-
+int eth_write(struct file *file, const char *buf, int count, void *data) {
+    // Is that even possible?
 	char proc_data[count + 1];
-	unsigned long long addr;
+    char addr[6] = {0, 0, 0, 0, 0, 0};
+	unsigned long long addr_long;
+    int i = 0;
 	int ret;
-	int mask_addr;
-	void *mac_temp;
+	// int mask_addr;
+	void **mac_temp; // An array(pointer) of pointers
+    void **mac_temp_next;
 	struct net_device *dev;
 	struct ei_device *ei_local;
 
-
-	//check to make sure there's only 12
-	//count will be 13 because of the newline from echo
-	if (count != 13){
+	// check to make sure there's only 12
+	// count will be 13 because of the newline from echo
+	if (count != 13) {
 		printk("count is %i which is not 13", count);
 		return -1;
 	}
 
-
 	if (copy_from_user(proc_data, buf, count))
 		return -EFAULT;
-	
 
-	//add a null character at the end
+	// add a null character at the end
 	proc_data[count] = '\0';
 
-	//try to get the integer out
-	ret = kstrtoull(&proc_data, 16, &addr);
+	// try to get the integer out
+	ret = kstrtoull(&proc_data, 16, &addr_long);
 	if (ret != 0)
 		return ret;
 
 	/*  SO WHAT NEEDS TO HAPPEN HERE.....
 	 *  Actually need to create the buffer
 	 */
-	printk(KERN_INFO "12-11: 0x%X\n", (addr & 0xFF0000000000) >> 40);
-	printk(KERN_INFO "10-09: 0x%X\n", (addr & 0x00FF00000000) >> 32);
-	printk(KERN_INFO "08-07: 0x%X\n", (addr & 0x0000FF000000) >> 24);
-	printk(KERN_INFO "06-05: 0x%X\n", (addr & 0x000000FF0000) >> 16);
-	printk(KERN_INFO "04-03: 0x%X\n", (addr & 0x00000000FF00) >> 8);
-	printk(KERN_INFO "02-01: 0x%X\n", (addr & 0x0000000000FF));
+
+    // MAC addresses come off the wire MSB first. So we do it too.
+    for (i = 0; i < 6; i++)
+        addr[5 - i] = ((addr_long & (0xFFL << (8 * i))) >> (8 * i));
+        
+    printk(KERN_INFO "got mac %02x%02x%02x%02x%02x%02x\n", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
 
 	//gotta find the net device....
 	dev = first_net_device(&init_net);
-	while(dev) {
+	while (dev) {
 		ei_local = netdev_priv(dev);
-		printk(KERN_INFO "found [%s]\n", ei_local->name);
-		if(ei_local->name == NULL){
+		printk(KERN_INFO "got [%s]\n", ei_local->name);
+		if (ei_local->name == NULL) {
 			dev = next_net_device(dev);	
 			continue;
 		}
-		if(strcmp("Berkeley ETH194", ei_local->name) == 0){
-			printk("FOUND IT ei_local=0x%X\n", ei_local);
+		if (strcmp("Berkeley ETH194", ei_local->name) == 0) {
+			printk("FOUND IT: ei_local=0x%X\n", ei_local);
 			break;
 		} else {
 			dev = next_net_device(dev);
 		}
 	}
+    
 	ei_local = netdev_priv(dev);
 
 	mac_temp = ei_local->mac_table;
+    printk(KERN_INFO "%s: mac_table at 0x%x\n", dev->name, mac_temp);
+    
+    for (i = 0; i < 5; i++) { 
+        mac_temp_next = mac_temp[addr[i]];
+        
+        printk(KERN_INFO "%s: next for byte #%d 0x%02x is 0x%x\n", dev->name, i, addr[i], mac_temp_next);
+        
+        if (mac_temp_next == 0) {
+            mac_temp_next = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
+            mac_temp[addr[i]] = mac_temp_next;
+            memset(mac_temp_next, 0, sizeof(void*) * 256);
+            printk(KERN_INFO "%s: allocated next table at 0x%x\n", dev->name, mac_temp_next);
+        } else {
+            printk(KERN_INFO "%s: table already allocated\n", dev->name);
+        }
+        
+        mac_temp = mac_temp_next;
+    }
+    
+    if (mac_temp[addr[5]] == 0) {
+        struct e194_buffer *write = kmalloc(sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE, GFP_DMA | GFP_KERNEL);
+        memset(write, 0, sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE);
+        mac_temp[addr[5]] = write;
+        printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%x\n", dev->name, addr[5], (void*) write);
+    } else {
+        printk(KERN_INFO "%s: buffer chain already allocated\n", dev->name);
+    }
+    
+    printk(KERN_INFO "mac_table[0x%x] = 0x%x\n", addr[0], ei_local->mac_table[addr[0]]);
+    
+    
 	//now for the 6 tiers...
 	//TODO:
 

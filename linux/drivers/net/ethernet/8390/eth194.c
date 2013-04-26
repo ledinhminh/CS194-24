@@ -1270,3 +1270,58 @@ static void __exit ne2k_pci_cleanup(void)
 
 module_init(ne2k_pci_init);
 module_exit(ne2k_pci_cleanup);
+
+
+/* Cramming Proc Interface in here too
+ * Only cuz linking it is easier
+ */
+#include <linux/proc_fs.h>
+
+int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
+	int len = 0;
+	len = sprintf(buf+len, "HELLO THERE FROM PROC\n");
+	return len;
+}
+
+int eth_write(struct file *file, const char *buf, int count, void *data){
+
+	char proc_data[count + 1];
+	unsigned long long addr;
+	int ret;
+
+	if(copy_from_user(proc_data, buf, count))
+		return -EFAULT;
+
+	//add a null character at the end
+	proc_data[count] = '\0';
+
+	printk("PROC: buf=%s", proc_data);
+
+	//try to get the integer out
+	ret = kstrtoull(&proc_data, 16, &addr);
+	if (ret != 0){
+		printk("PROC: ret=%i", ret);
+		return ret;
+	}
+
+	//print it out as a check
+	printk("PROC: count=%i integer=0x%llX\n", count, addr);
+
+	return count;
+}
+
+int eth_init(void){
+	struct proc_dir_entry *e;
+	e = create_proc_entry("eth194", 0, NULL);
+	e->read_proc = eth_read;
+	e->write_proc = eth_write;
+	return 0;
+}
+
+void eth_cleanup(void){
+	remove_proc_entry("eth194", NULL);
+
+}
+
+module_init(eth_init);
+module_exit(eth_cleanup);

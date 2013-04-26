@@ -30,6 +30,8 @@ slink /bin/sh busybox 777 0 0
 slink /bin/udhcpc busybox 777 0 0
 slink /bin/uname busybox 777 0 0
 slink /bin/which busybox 777 0 0
+slink /bin/ping busybox 777 0 0
+slink /bin/arp busybox 777 0 0
 
 # This contains a startup script for busybox
 file /bin/udhcp-script fs/udhcp-script 755 0 0

@@ -72,6 +72,7 @@
 #define EN2_STARTPG	0x21	/* Starting page of ring bfr RD */
 #define EN2_STOPPG	0x22	/* Ending page +1 of ring bfr RD */
 
+// Uh yeah, no. These are not supposed to be here.
 #define EN3_CONFIG0	0x33
 #define EN3_CONFIG1	0x34
 #define EN3_CONFIG2	0x35
@@ -85,6 +86,11 @@
 #define EN3_CURW1       0x3B
 #define EN3_CURW2       0x3C
 #define EN3_CURW3       0x3D
+
+#define EN3_TBLW0       0x31
+#define EN3_TBLW1       0x39
+#define EN3_TBLW2       0x3E
+#define EN3_TBLW3       0x3F   
 
 /*  Register accessed at EN_CMD, the 8390 base addr.  */
 #define E8390_STOP	0x01	/* Stop and reset the chip */
@@ -166,6 +172,33 @@ int eth194plus_can_receive(NetClientState *nc)
     return !eth194plus_buffer_full(s);
 }
 
+#define TABLE_SIZE 256
+
+uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
+    // Time to traverse the tables.
+    uint32_t tbl[TABLE_SIZE]; // 256 = possible values of uint8_t
+    uint32_t next_tbl;
+    
+    printf("ETH194+: getting buffer chain for mac %02x%02x%02x%02x%02x%02x\n", src[0], src[1], src[2], src[3], src[4], src[5]);
+    
+    printf("ETH194+: s->curw=0x%02x, s->tblw=0x%02x\n", s->curw, s->tblw);
+    
+    if (s->tblw == 0) {
+        printf("ETH194+: No tblw, using curw\n");
+        return s->curw;
+    }
+    
+    printf("ETH194+: Traversing first table...\n");
+    // Get the first table
+    cpu_physical_memory_read(s->tblw, &tbl, sizeof(uint32_t) * TABLE_SIZE);
+    next_tbl = tbl[src[0]];
+    
+    printf("ETH194+: pointer to next table appears to be 0x%08x\n", next_tbl);
+    
+    
+    return s->curw;
+}
+
 #define MIN_BUF_SIZE 60
 
 ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size)
@@ -173,6 +206,8 @@ ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     ETH194PlusState *s = qemu_get_nic_opaque(nc);
     struct eth194plus_fb fb;
     uint8_t buf1[60];
+    uint8_t src_mac[6];
+    uint32_t chain;
 
     printf("NET DEVICE: RECEIVED FRAME\n");
 #if defined(DEBUG_ETH194)
@@ -194,6 +229,10 @@ ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     /* Check if there's no remaining buffer */
     if (s->curw == 0)
     return size;
+
+    memcpy(src_mac, buf + 6, 6);
+    
+    chain = eth194plus_chain_for_mac(s, src_mac);
 
     fb.df = 0x01;
     cpu_physical_memory_write(s->curw, &fb, 1);
@@ -329,7 +368,22 @@ static void eth194plus_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 	case EN3_CURW3:
 	    s->wv = 0x00;
 	    s->curw = (s->curw & 0x00ffffff) | (val << 24);
-        // printf("ETH194: CURW3 curw=%X\n", s->curw);
+	    break;
+	case EN3_TBLW0:
+	    s->wv = 0x07; // What do these do???
+	    s->tblw = (s->tblw & 0xffffff00) | (val << 0);
+	    break;
+    case EN3_TBLW1:
+	    s->wv = 0x03;
+	    s->tblw = (s->tblw & 0xffff00ff) | (val << 8);
+	    break;
+    case EN3_TBLW2:
+	    s->wv = 0x01;
+	    s->tblw = (s->tblw & 0xff00ffff) | (val << 16);
+	    break;
+	case EN3_TBLW3:
+	    s->wv = 0x00;
+	    s->tblw = (s->tblw & 0x00ffffff) | (val << 24);
 	    break;
         }
     }
@@ -362,15 +416,15 @@ static uint32_t eth194plus_ioport_read(void *opaque, uint32_t addr)
         case EN0_RSR:
             ret = s->rsr;
             break;
-	case EN3_CONFIG0:
-	    ret = 0;		/* 10baseT media */
-	    break;
-	case EN3_CONFIG2:
-	    ret = 0x40;		/* 10baseT active */
-	    break;
-	case EN3_CONFIG3:
-	    ret = 0x40;		/* Full duplex */
-	    break;
+        case EN3_CONFIG0:
+            ret = 0;		/* 10baseT media */
+            break;
+        case EN3_CONFIG2:
+            ret = 0x40;		/* 10baseT active */
+            break;
+        case EN3_CONFIG3:
+            ret = 0x40;		/* Full duplex */
+            break;
         default:
             ret = 0x00;
             break;
@@ -386,30 +440,42 @@ static uint32_t eth194plus_ioport_read(void *opaque, uint32_t addr)
         case EN0_RCNTHI:
             ret = s->rcnt & 0xff00;
             break;
-	case EN3_CURR0:
-	    ret = (s->curr & ~0xffffff00);
-	    break;
-	case EN3_CURR1:
-	    ret = (s->curr & ~0xffff00ff);
-	    break;
-	case EN3_CURR2:
-	    ret = (s->curr & ~0xff00ffff);
-	    break;
-	case EN3_CURR3:
-	    ret = (s->curr & ~0x00ffffff);
-	    break;
-	case EN3_CURW0:
-	    ret = (s->curw & ~0xffffff00);
-	    break;
-	case EN3_CURW1:
-	    ret = (s->curw & ~0xffff00ff);
-	    break;
-	case EN3_CURW2:
-	    ret = (s->curw & ~0xff00ffff);
-	    break;
-	case EN3_CURW3:
-	    ret = (s->curw & ~0x00ffffff);
-	    break;
+        case EN3_CURR0:
+            ret = (s->curr & ~0xffffff00);
+            break;
+        case EN3_CURR1:
+            ret = (s->curr & ~0xffff00ff);
+            break;
+        case EN3_CURR2:
+            ret = (s->curr & ~0xff00ffff);
+            break;
+        case EN3_CURR3:
+            ret = (s->curr & ~0x00ffffff);
+            break;
+        case EN3_CURW0:
+            ret = (s->curw & ~0xffffff00);
+            break;
+        case EN3_CURW1:
+            ret = (s->curw & ~0xffff00ff);
+            break;
+        case EN3_CURW2:
+            ret = (s->curw & ~0xff00ffff);
+            break;
+        case EN3_CURW3:
+            ret = (s->curw & ~0x00ffffff);
+            break;
+        case EN3_TBLW0:
+            ret = (s->tblw & ~0xffffff00);
+            break;
+        case EN3_TBLW1:
+            ret = (s->tblw & ~0xffff00ff);
+            break;
+        case EN3_TBLW2:
+            ret = (s->tblw & ~0xff00ffff);
+            break;
+        case EN3_TBLW3:
+            ret = (s->tblw & ~0x00ffffff);
+            break;
         }
     }
 #ifdef DEBUG_ETH194
@@ -429,7 +495,7 @@ static int eth194plus_post_load(void* opaque, int version_id)
 }
 
 const VMStateDescription vmstate_eth194plus = {
-    .name = "eth194",
+    .name = "eth194plus",
     .version_id = 0,
     .minimum_version_id = 0,
     .minimum_version_id_old = 0,
@@ -455,7 +521,7 @@ const VMStateDescription vmstate_eth194plus = {
 };
 
 static const VMStateDescription vmstate_pci_eth194plus = {
-    .name = "eth194",
+    .name = "eth194plus",
     .version_id = 3,
     .minimum_version_id = 3,
     .minimum_version_id_old = 3,
@@ -535,6 +601,7 @@ static int pci_eth194plus_init(PCIDevice *pci_dev)
     eth194plus_reset(s);
 
     memcpy(s->phys, &s->c.macaddr, 6);
+    // printf("ETH194: macaddr is %X:%X:%X:%X:%X:%X\n", s->phys[0], s->phys[1], s->phys[2], s->phys[3], s->phys[4], s->phys[5]);
 
     s->nic = qemu_new_nic(&net_eth194plus_info, &s->c,
                           object_get_typename(OBJECT(pci_dev)), pci_dev->qdev.id, s);

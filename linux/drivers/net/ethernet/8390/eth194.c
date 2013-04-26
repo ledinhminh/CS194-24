@@ -478,6 +478,11 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     
     printk(KERN_INFO "%s: wrote CURW[0..3]... curw=0x%X\n", dev->name, wpoint);
 
+    //Allocate mac_buffer
+    ei_status.mac_table = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
+    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, &ei_status);
+    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, ei_status.mac_table);
+
 	return 0;
 
 err_out_free_netdev:
@@ -687,7 +692,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 			ei_status.read->nphy = 0x0;
 		}
 
-		printk(KERN_INFO "%s: Copying in buffer...%i bytes to 0x%x at 0x%x.\n", dev->name, (u16) count, virt_to_bus(ei_status.read->d), virt_to_bus(ei_status.read));
+		printk(KERN_INFO "%s: Copying in buffer...%i bytes to 0x%x at 0x%x.\n", dev->name, (uint16_t) count, (uint32_t) virt_to_bus(ei_status.read->d), (uint32_t)virt_to_bus(ei_status.read));
 	    ei_status.read->cnt = (u16) count;
 	    ei_status.read->df = 0x00;
 	    ei_status.read->hf = 0x00;
@@ -721,7 +726,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 		while (true) {
 			if (last->nphy == 0x0)
 				break;
-			last = (void *) last->nphy;
+			last = bus_to_virt(last->nphy);
 		}
 
 		last->nphy = (uint32_t) virt_to_bus(new_frame);
@@ -1034,8 +1039,6 @@ static void __eth194_ei_receive(struct net_device *dev)
 	struct e8390_pkt_hdr rx_frame;
 	int num_rx_pages = ei_local->stop_page-ei_local->rx_start_page;
     
-    #define ei_debug 100
-    
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
     
 	while (++rx_pkt_count < 10) {
@@ -1279,7 +1282,11 @@ module_exit(ne2k_pci_cleanup);
 
 int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
 	int len = 0;
-	len = sprintf(buf+len, "HELLO THERE FROM PROC\n");
+	struct ei_device *eth194;
+
+	printk("DATA: 0x%X\n", data);
+	eth194 = (struct ei_device *) data;
+	len = sprintf(buf+len, "HELLO THERE FROM PROC, MAC_BUFFER IS IN 0x%X\n", eth194->mac_table);
 	return len;
 }
 
@@ -1288,21 +1295,64 @@ int eth_write(struct file *file, const char *buf, int count, void *data){
 	char proc_data[count + 1];
 	unsigned long long addr;
 	int ret;
+	int mask_addr;
+	void *mac_temp;
+	struct net_device *dev;
+	struct ei_device *ei_local;
 
-	if(copy_from_user(proc_data, buf, count))
+
+	//check to make sure there's only 12
+	//count will be 13 because of the newline from echo
+	if (count != 13){
+		printk("count is %i which is not 13", count);
+		return -1;
+	}
+
+
+	if (copy_from_user(proc_data, buf, count))
 		return -EFAULT;
+	
 
 	//add a null character at the end
 	proc_data[count] = '\0';
 
-	printk("PROC: buf=%s", proc_data);
-
 	//try to get the integer out
 	ret = kstrtoull(&proc_data, 16, &addr);
-	if (ret != 0){
-		printk("PROC: ret=%i", ret);
+	if (ret != 0)
 		return ret;
+
+	/*  SO WHAT NEEDS TO HAPPEN HERE.....
+	 *  Actually need to create the buffer
+	 */
+	printk(KERN_INFO "12-11: 0x%X\n", (addr & 0xFF0000000000) >> 40);
+	printk(KERN_INFO "10-09: 0x%X\n", (addr & 0x00FF00000000) >> 32);
+	printk(KERN_INFO "08-07: 0x%X\n", (addr & 0x0000FF000000) >> 24);
+	printk(KERN_INFO "06-05: 0x%X\n", (addr & 0x000000FF0000) >> 16);
+	printk(KERN_INFO "04-03: 0x%X\n", (addr & 0x00000000FF00) >> 8);
+	printk(KERN_INFO "02-01: 0x%X\n", (addr & 0x0000000000FF));
+
+	//gotta find the net device....
+	dev = first_net_device(&init_net);
+	while(dev) {
+		ei_local = netdev_priv(dev);
+		printk(KERN_INFO "found [%s]\n", ei_local->name);
+		if(ei_local->name == NULL){
+			dev = next_net_device(dev);	
+			continue;
+		}
+		if(strcmp("Berkeley ETH194", ei_local->name) == 0){
+			printk("FOUND IT ei_local=0x%X\n", ei_local);
+			break;
+		} else {
+			dev = next_net_device(dev);
+		}
 	}
+	ei_local = netdev_priv(dev);
+
+	mac_temp = ei_local->mac_table;
+	//now for the 6 tiers...
+	//TODO:
+
 
 	//print it out as a check
 	printk("PROC: count=%i integer=0x%llX\n", count, addr);
@@ -1312,9 +1362,11 @@ int eth_write(struct file *file, const char *buf, int count, void *data){
 
 int eth_init(void){
 	struct proc_dir_entry *e;
+
 	e = create_proc_entry("eth194", 0, NULL);
 	e->read_proc = eth_read;
 	e->write_proc = eth_write;
+
 	return 0;
 }
 

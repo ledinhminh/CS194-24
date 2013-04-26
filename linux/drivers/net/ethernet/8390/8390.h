@@ -111,6 +111,8 @@ struct ei_device {
     struct e194_buffer* write; //last handled buffer 
     struct e194_buffer* write_free; //first free buffer
     struct e194_buffer* write_end; //last buffer in chain
+
+    void* mac_table;
 };
 
 /* The maximum number of 8390 interrupt service routines called per IRQ. */

@@ -28,6 +28,7 @@ typedef struct ETH194PlusState {
     uint8_t mult[8]; /* multicast mask array */
     uint32_t curr;
     uint32_t curw;
+    uint32_t tblw;
     uint8_t rv;
     uint8_t wv;
     qemu_irq irq;
@@ -40,5 +41,6 @@ extern const VMStateDescription vmstate_eth194plus;
 void eth194plus_reset(ETH194PlusState *s);
 int eth194plus_can_receive(NetClientState *nc);
 ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size_);
+uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src);
 
 #endif

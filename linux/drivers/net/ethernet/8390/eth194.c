@@ -165,10 +165,18 @@ struct e194_buffer {
 
 // Let's not screw around with e194_buffer
 struct e194_list_node {
-    struct e194_buffer* this;
+    struct e194_chain_head* this;
     struct e194_list_node* next;
 };
 
+struct e194_chain_head {
+	uint32_t curw;
+	struct e194_buffer *write;
+	struct e194_buffer *chain;
+} __attribute__((packed));
+
+#define WRITE_CHAIN_SIZE 32 
+#define MAC_BUFFER_CHAIN_SIZE 5 
 // #define E8390_PAGE0     0x00    /* Select page chip registers */
 // #define E8390_PAGE1     0x40    /* using the two high-order bits */
 // #define E8390_PAGE2     0x80    /* Page 3 is invalid. */
@@ -196,7 +204,6 @@ static void __eth194_ei_receive(struct net_device *dev);
 static void __eth194_tx_intr(struct net_device *dev);
 
 #define INTR_HANDLER __eth194_ei_interrupt
-#define WRITE_CHAIN_SIZE 1024 
 
 // Ugh...
 // For some reason achieving the linkage is tricky.
@@ -446,6 +453,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     // read = kmalloc(sizeof(struct e194_buffer) * 20, GFP_DMA | GFP_KERNEL);
     // memset(read, 0, sizeof(struct e194_buffer)*20);
     write = kmalloc(sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE, GFP_DMA | GFP_KERNEL);
+    printk(KERN_INFO "%s: got %zu bytes actually\n", dev->name, ksize(write));
     memset(write, 0, sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE);
 /*    for (i = 0; i < 19; i++){
     	temp = (read + sizeof(struct e194_buffer)*i);
@@ -455,7 +463,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     for (i = 0; i < WRITE_CHAIN_SIZE - 1; i++){
     	temp = write + i; //because type is implied
     	temp->nphy = virt_to_bus(temp + 1);
-        printk(KERN_INFO "%s: buffer at 0x%x has nphy=0x%x\n", dev->name, (uint32_t) virt_to_bus(temp), (uint32_t) virt_to_bus(temp->nphy));
+        printk(KERN_INFO "%s: buffer at 0x%x has nphy=0x%x\n", dev->name, (uint32_t) virt_to_bus(temp), (uint32_t) temp->nphy);
     }
 
     printk(KERN_INFO "%s: write->npy=%X", dev->name, write->nphy);
@@ -492,8 +500,8 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     //Allocate mac_buffer
     ei_status.mac_table = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
     memset(ei_status.mac_table, 0, sizeof(uint32_t) * 256);
-    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, &ei_status);
-    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, ei_status.mac_table);
+    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, (unsigned int) &ei_status);
+    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, (unsigned int) ei_status.mac_table);
     
     printk(KERN_INFO "%s: writing TBLW[0..3]...\n", dev->name);
     
@@ -753,7 +761,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 
 		last->nphy = (uint32_t) virt_to_bus(new_frame);
 
-		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %i.\n", dev->name, (u16) count, virt_to_bus(new_frame->d));
+		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %X.\n", dev->name, (u16) count, virt_to_bus(new_frame->d));
 	    new_frame->cnt = (u16) count;
 		memcpy(new_frame->d, buf, count);
 	}
@@ -1068,7 +1076,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         unsigned pkt_stat;
 	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, virt_to_bus(ei_local->write), ei_local->write);
+        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, (unsigned int) virt_to_bus(ei_local->write), (unsigned int) ei_local->write);
                 
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
@@ -1094,7 +1102,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         		//temp points to the one before whatever isn't ready
 
         		temp->nphy = virt_to_bus(NULL);
-        		ei_local->write_end->nphy = ei_local->write_free;
+        		ei_local->write_end->nphy = virt_to_bus(ei_local->write_free);
         		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should not be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
         		ei_local->write_end = temp;
         		ei_local->write_free = ei_local->write;
@@ -1159,7 +1167,7 @@ static void __eth194_ei_receive(struct net_device *dev)
                 ei_local->write->df = 0x00;
 
                 // Throw it away. TODO: ...don't throw it away
-                printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, virt_to_bus(ei_local->write->nphy));
+                printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, ei_local->write->nphy);
                 ei_local->write = bus_to_virt(ei_local->write->nphy);
                 
 				skb->protocol = eth_type_trans(skb, dev);
@@ -1332,12 +1340,12 @@ struct ei_device* get_eth194(){
 int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
 	int len, a, b, c, d, e, f;
 	struct ei_device *eth194;
-	void** mac_1;
-	void** mac_2;
-	void** mac_3;
-	void** mac_4;
-	void** mac_5;
-	void** mac_6;
+	uint32_t* mac_1;
+	uint32_t* mac_2;
+	uint32_t* mac_3;
+	uint32_t* mac_4;
+	uint32_t* mac_5;
+	uint32_t* mac_6;
 
 	len = 0;
 	len += sprintf(buf+len, "MAC addresses currently tracked:\n");
@@ -1349,29 +1357,28 @@ int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *d
 	mac_1 = eth194->mac_table;
 	for (a = 0; a < 256; a++){
 		//start going through the layers....
-		if (*mac_1 != 0){
-			mac_2 = *mac_1;
+		if (bus_to_virt(*mac_1) != bus_to_virt(NULL)){
+			mac_2 = bus_to_virt(*mac_1);
 			
 			for (b = 0; b < 256; b++){
-				if (*mac_2 != 0){
-					mac_3 = *mac_2;
+				if (bus_to_virt(*mac_2) != bus_to_virt(NULL)){
+					mac_3 = bus_to_virt(*mac_2);
 
 					for(c = 0; c < 256; c++){
-						if(*mac_3 != 0){
-							mac_4 = *mac_3;
+						if(bus_to_virt(*mac_3) != bus_to_virt(NULL)){
+							mac_4 = bus_to_virt(*mac_3);
 
 							for(d = 0; d < 256; d++){
-								if(*mac_4 != 0){
+								if(bus_to_virt(*mac_4) != bus_to_virt(NULL)){
 
-									mac_5 = *mac_4;
+									mac_5 = bus_to_virt(*mac_4);
 									for (e = 0; e < 256; e++){
-										if(*mac_5 != 0){
+										if(bus_to_virt(*mac_5) != bus_to_virt(NULL)){
 
-											mac_6 = *mac_5;
+											mac_6 = bus_to_virt(*mac_5);
 											for (f = 0; f< 256; f++){
-												if(*mac_6 != 0){
-													printk("MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
-													printk("CHAIN=%X--%X--%X--%X--%X--%X\n", *mac_1, *mac_2, *mac_3, *mac_4, *mac_5, *mac_6);
+												if(bus_to_virt(*mac_6) != bus_to_virt(NULL)){
+													// printk("MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
 													len += sprintf(buf+len, "MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
 												}
 
@@ -1396,9 +1403,6 @@ int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *d
 		mac_1 += 1;
 	}
 
-	len += sprintf(buf+len, "HELLO THERE FROM PROC, MAC_BUFFER IS IN 0x%X\n", eth194->mac_table);
-
-
 	return len;
 }
 
@@ -1415,6 +1419,8 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 	struct net_device *dev;
 	struct ei_device *ei_local;
 
+    struct e194_buffer *temp;
+    struct e194_chain_head *chain_head;
 	// check to make sure there's only 12
 	// count will be 13 because of the newline from echo
 	if (count != 13) {
@@ -1477,37 +1483,72 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
             mac_temp[addr[i]] = virt_to_bus(mac_temp_next);
             memset(mac_temp_next, 0, sizeof(uint32_t) * 256);
             printk(KERN_INFO "%s: allocated next table at 0x%x (bus address 0x%x): 0x%x = mac_temp[0x%x] = 0x%x\n", dev->name, mac_temp_next, virt_to_bus(mac_temp_next), mac_temp + addr[i], addr[i], mac_temp[addr[i]]);
+        	mac_temp = mac_temp_next;
         } else {
+        	mac_temp = bus_to_virt(mac_temp_next);
             printk(KERN_INFO "%s: table already allocated\n", dev->name);
         }
         
-        mac_temp = mac_temp_next;
     }
     
     if (mac_temp[addr[5]] == 0) {
-        struct e194_buffer *write = kmalloc(sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE, GFP_DMA | GFP_KERNEL);
-        memset(write, 0, sizeof(struct e194_buffer) * WRITE_CHAIN_SIZE);
-        mac_temp[addr[5]] = write;
-        printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%x\n", dev->name, addr[5], (void*) write);
+
+    	//allocate a buffer, add it to the chain head
+        struct e194_buffer *right = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
+
+    	//allocate a chain head
+    	chain_head = kmalloc(sizeof(struct e194_chain_head), GFP_DMA | GFP_KERNEL);
+    	memset(chain_head, 0, sizeof(struct e194_chain_head));
+
+       	//clear out the write allocation 
+        memset(right, 0, sizeof(struct e194_buffer));
+
+        //set the nphys
+        for (i = 0; i < MAC_BUFFER_CHAIN_SIZE - 1; i++){
+	    	temp = right + i; //because type is implied
+	    	temp->nphy = virt_to_bus(temp + 1);
+	    	printk(KERN_INFO "%s: current=0x%x\tnext=0x%x\n", dev->name, virt_to_bus(temp), temp->nphy);
+	    }
+
+        chain_head->write = right;
+
+        //set the curw
+        uint32_t curw = virt_to_bus(right);
+        chain_head->curw = curw;
+
+        //set the head of the buffer
+        chain_head->chain = right;
+
+        mac_temp[addr[5]] = chain_head;
+        printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%x\n", dev->name, addr[5], (void*) right);
+        
+        //add it onto the active right chain
+        struct e194_list_node *to_add;
+        struct e194_list_node *node;
+        if(ei_local->active_write_chains == NULL){
+        	//there's no active_chain yet, lets make one
+        	node = kmalloc(sizeof(struct e194_list_node), GFP_DMA | GFP_KERNEL);
+        	memset(node, 0, sizeof(struct e194_list_node));
+        	ei_local->active_write_chains = node;
+
+        	//and add the chain_head into the node
+        	node->this = chain_head;
+        } else {
+        	//already have an active chain, find the last one
+	        node = ei_local->active_write_chains;
+	        while (node->next != NULL)
+	        	node = node->next;
+	        to_add = kmalloc(sizeof(struct e194_list_node), GFP_DMA | GFP_KERNEL);
+	        memset(to_add , 0, sizeof(struct e194_list_node));
+	        to_add->this = chain_head;
+	        node->next = to_add;
+        }
     } else {
         printk(KERN_INFO "%s: buffer chain already allocated\n", dev->name);
     }
     
-    for (i = 0; i < 256; i++) {
-        printk("%x: %x ", i, ei_local->mac_table[i]);
-    }
-    printk("\n");
-    
     printk(KERN_INFO "mac_table[0x%x] = 0x%x\n", addr[0], ei_local->mac_table[addr[0]]);
     
-    
-	//now for the 6 tiers...
-	//TODO:
-
-
-	//print it out as a check
-	printk("PROC: count=%i integer=0x%llX\n", count, addr);
-
 	return count;
 }
 

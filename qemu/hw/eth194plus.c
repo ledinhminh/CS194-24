@@ -218,9 +218,9 @@ ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     uint32_t chain;
 
     printf("NET DEVICE: RECEIVED FRAME\n");
-#if defined(DEBUG_ETH194)
+// #if defined(DEBUG_ETH194)
     printf("ETH194: received len=%d\n", size);
-#endif
+// #endif
 
 
     if (s->cmd & E8390_STOP || eth194plus_buffer_full(s))
@@ -251,6 +251,7 @@ ssize_t eth194plus_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     cpu_physical_memory_write(s->curw, &fb, sizeof(fb));
     fb.df = 0x03;
     cpu_physical_memory_write(s->curw, &fb, 1);
+    printf("ETH194: CURW=0x%X\n", s->curw);
     // printf("ETH194: RECEIVE before curw=%X nphy=%X count=%d bytes\n", s->curw, fb.nphy, fb.cnt);
     s->curw = fb.nphy;
     // printf("ETH194: RECEIVE after  curw=%X\n", s->curw);

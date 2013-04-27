@@ -1409,8 +1409,8 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
     int i = 0;
 	int ret;
 	// int mask_addr;
-	void **mac_temp; // An array(pointer) of pointers
-    void **mac_temp_next;
+	uint32_t **mac_temp; // An array(pointer) of pointers
+    uint32_t **mac_temp_next;
 	struct net_device *dev;
 	struct ei_device *ei_local;
 

@@ -341,7 +341,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	/* Allocate net_device, dev->priv; fill in 8390 specific dev fields. */
 	dev = alloc_ei_netdev();
 	if (!dev) {
-		dev_err(&pdev->dev, "cannot allocate ethernet device\n");
+		dev_err(&pdev->dev, "cannoti allocate ethernet device\n");
 		goto err_out_free_res;
 	}
 	dev->netdev_ops = &ne2k_netdev_ops;
@@ -502,8 +502,8 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     //Allocate mac_buffer
     ei_status.mac_table = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
     memset(ei_status.mac_table, 0, sizeof(uint32_t) * 256);
-    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, (unsigned int) &ei_status);
-    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, (unsigned int) ei_status.mac_table);
+    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, (void *) &ei_status);
+    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, (void *) ei_status.mac_table);
     
     printk(KERN_INFO "%s: writing TBLW[0..3]...\n", dev->name);
     
@@ -763,7 +763,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 
 		last->nphy = (uint32_t) virt_to_bus(new_frame);
 
-		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %X.\n", dev->name, (u16) count, virt_to_bus(new_frame->d));
+		printk(KERN_INFO "%s: Copying in buffer...%i bytes to %X.\n", dev->name, (u16) count, (unsigned int) virt_to_bus(new_frame->d));
 	    new_frame->cnt = (u16) count;
 		memcpy(new_frame->d, buf, count);
 	}
@@ -1078,7 +1078,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         unsigned pkt_stat;
 	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, (unsigned int) virt_to_bus(ei_local->write), (unsigned int) ei_local->write);
+        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, (unsigned int) virt_to_bus(ei_local->write), (void *) ei_local->write);
                 
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS

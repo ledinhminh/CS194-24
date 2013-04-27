@@ -7,7 +7,7 @@ def next_line(id)
   # If the subprocess has already been killed then we can't possibly
   # proceed, any test asking for output must be already failed
   if (@qemu_out_pipe[id] == nil)
-    @link_lock[id].unlock
+    @line_lock[id].unlock
     fail
   end
 
@@ -60,7 +60,7 @@ def next_line_noprintk(id)
 end
 
 # Kills the currently running QEMU instance in an entirely safe manner
-def kill_qemu()
+def kill_qemu(id=0)
   # We need a lock here to avoid the race between starting up the
   # thread that reads from QEMU and killing it.
   @line_lock[id].lock
@@ -119,8 +119,6 @@ def boot_linux(boot_args, id=0)
 
   # Start up QEMU in the background, note the implicit "--pipe"
   # argument that gets added here that causes QEMU to redirect
-  puts "./boot_qemu --pipe#{id} #{boot_args}"
-  exit(0)
   @qemu_process[id] = IO.popen("./boot_qemu --pipe#{id} #{boot_args}", "r")
   @qemu_running[id] = true
 
@@ -209,9 +207,51 @@ end
 def qemu_cleanup()
   # Clean up after any potential left over QEMU cruft
   `./boot_qemu --cleanup`
+
+  pids = `ps -Ao "%p,%a" | grep -i qemu | cut -d ',' -f 1 | xargs`
+
+  `kill #{pids}`
 end
 
-def initialize()
+def set_ip(id=0)
+  write_line("ifconfig eth0 #{@linux_ip[id]}", id)
+end
+
+def linux_execute(command, id)
+  write_line(command, id)
+  sleep(1)
+end
+
+def host_execute(command)
+  `#{command}`
+end
+
+def ping(count, from, to)
+  write_line("ping -c #{count} -s 5000 #{@linux_ip[to]}", from)
+  while !(/^.*packets transmitted.*$/.match(next_line(from)))
+    #puts @line[from]
+  end
+  puts @line[from]
+  if !(/^.*packets transmitted.*, 0%.packet loss/.match(@line[from]))
+    fail
+  end
+end
+
+def linux_not_output(text, fin, id)
+  text = Regexp.escape(text)
+  #fin = Regexp.escape(fin)
+
+  begin
+    next_line(id)
+    puts @line[id].inspect
+
+    if /^.*#{text}.*$/.match(@line[id])
+      fail
+    end
+  end while !(/^.*#{fin}.*$/.match(@line[id]))
+end
+
+def initialize_tests()
   @line_lock = []
   @qemu_out_pipe = []
   @qemu_in_pipe = []
@@ -229,31 +269,57 @@ def initialize()
   @watchdog_thread = []
 
   @line = []
-  @link_lock = []
+
+  @linux_ip = ["10.0.2.15", "10.0.2.16"]
+  return
 end
 
-Given /^Initialized tests$/ do
-  initialize
+Given /^Initialize tests$/ do
+  initialize_tests
 end
 
 Given /^Linux is booted with "(.*?)"$/ do |boot_args|
-  boot_linux(boot_args)
+  boot_linux boot_args
+  set_ip
 end
 
 And /^Linux2 is booted with "(.*?)"$/ do |boot_args|
-  boot_linux(boot_args,1)
+  boot_linux boot_args, 1
+  set_ip 1
 end
 
 Then /^Linux should shut down cleanly$/ do
-  kill_linux()
+  kill_qemu
 end
 
-Then /^Linux2 should shut down cleanly$/ do
-  kill_linux(1)
+And /^Linux2 should shut down cleanly$/ do
+  kill_qemu 1
 end
 
 And /^Cleanup Qemu cruft$/ do
   qemu_cleanup
 end
-#initialize
-#boot_linux("--net ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A --stdio")
+
+Then /^Linux(.) ping Linux(.) ([0-9]+) times$/ do | node1, node2, count |
+  ping count.to_i, node1.to_i - 1, node2.to_i - 1
+  sleep(0.5)
+end
+
+Then /^Linux(.) execute "(.*?)"$/ do | id, command |
+  linux_execute command, id.to_i - 1
+end
+
+And /^Host execute "(.*?)"$/ do | command |
+  host_execute command
+end
+
+Then /^Linux(.) output does not contain "(.*?) stop at "(.*?)"/ do | id, text, fin |
+  linux_not_output text, fin, id.to_i - 1
+end
+
+# initialize_tests
+# boot_linux("--net ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A")
+# boot_linux("--net ne2k_pci,macaddr=0A:0A:0A:0A:0B:0B --node2",1)
+# kill_qemu(0)
+# kill_qemu(1)
+# qemu_cleanup

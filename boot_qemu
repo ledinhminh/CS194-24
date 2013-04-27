@@ -7,6 +7,7 @@ monitor=""
 debug=""
 kvm=""
 memory="-m 512"
+redir=""
 card="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A "
 net1="-net user -net socket,listen=localhost:1234"
 net2="-net socket,connect=localhost:1234 "
@@ -48,6 +49,10 @@ do
 				serial="--serial pipe:qemu_serial_pipe1"
 				monitor="--monitor pipe:qemu_monitor_pipe1"
 				append="--append console=ttyS0"
+		elif [[ "$1" == "--redir" ]]
+		then
+				redir="-redir $2"
+				shift
 		elif [[ "$1" == "--net" ]]
     then
 				card="-net nic,model=$2"
@@ -108,14 +113,6 @@ do
     shift
 done
 
-# set -e
-
-# trap 'exec ./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
-#     --kernel linux/arch/x86/boot/bzImage \
-#     $initrd $append $serial $monitor $debug $kvm $memory $net2 $smp' \
-# 		INT TERM EXIT
-
-
 ./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $memory $card $net1 $smp
+    $initrd $append $serial $monitor $debug $kvm $memory $card $net1 $redir $smp

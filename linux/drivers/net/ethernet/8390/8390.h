@@ -114,7 +114,8 @@ struct ei_device {
     struct e194_buffer *write_end; //last buffer in chain
 
     uint32_t *mac_table; // Array of pointers. Size 256, but no one knows that.
-    struct e194_list_node* active_write_chains;
+    struct e194_list_node *active_write_chains;
+    struct e194_list_node *current_write_chain; //used for round-robin schema
     
 };
 

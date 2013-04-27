@@ -175,6 +175,7 @@ struct e194_chain_head {
 	uint32_t curw;
 	struct e194_buffer *write;
 	struct e194_buffer *chain;
+	struct e194_buffer *chain_end;
 } __attribute__((packed));
 
 #define WRITE_CHAIN_SIZE 1024 
@@ -504,6 +505,27 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     memset(ei_status.mac_table, 0, sizeof(uint32_t) * 256);
     printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, (void *) &ei_status);
     printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, (void *) ei_status.mac_table);
+
+    //creating the chain head for generic buffer chain 
+    struct e194_chain_head *chain_head = kmalloc(sizeof(struct e194_chain_head), GFP_DMA | GFP_KERNEL);
+    memset(chain_head, 0, sizeof(struct e194_chain_head));
+    chain_head->write = ei_status.write;
+    chain_head->chain = ei_status.write;
+    chain_head->curw = ei_status.write;
+    chain_head->chain_end = ei_status.write + (WRITE_CHAIN_SIZE - 1);
+    printk(KERN_INFO "%s: Allocated Chain Head\n", dev->name);
+
+    //add an active list node for the generic buffer
+    struct e194_list_node *list_node = kmalloc(sizeof(struct e194_list_node), GFP_DMA | GFP_KERNEL);
+    list_node->this = chain_head;
+    list_node->next = NULL;
+    printk(KERN_INFO "%s: Allocated List Node\n", dev->name);
+
+    //add the list node to ei_device
+    ei_status.active_write_chains = list_node;
+    ei_status.current_write_chain = list_node;
+    printk(KERN_INFO "%s: Added List Node to write_chains\n", dev->name);
+
     
     printk(KERN_INFO "%s: writing TBLW[0..3]...\n", dev->name);
     
@@ -1050,6 +1072,31 @@ static void __eth194_tx_intr(struct net_device *dev)
 	netif_wake_queue(dev);
 }
 
+
+/* We want to shuffle the chain heads */
+void shuffle(struct e194_chain_head *chain_head){
+	struct e194_buffer *temp;
+	
+	temp = chain_head->chain;
+	while (temp != chain_head->write){
+		if (bus_to_virt(temp->nphy) == chain_head->write)
+			break;
+		temp->df = 0x00;
+		temp = bus_to_virt(temp->nphy);
+	}
+
+	//set the nphy of the one before write to null
+	temp->nphy = bus_to_virt(0);
+
+	//set the end to point to the head
+	chain_head->chain_end->nphy = bus_to_virt(chain_head->chain);
+
+	//set the head to point to write
+	chain_head->chain = chain_head->write;
+
+	//set the end of the chain
+	chain_head->chain_end = temp;
+}
 /**
  * ei_receive - receive some packets
  * @dev: network device with which receive will be run
@@ -1070,51 +1117,84 @@ static void __eth194_ei_receive(struct net_device *dev)
 	int rx_pkt_count = 0;
 	struct e8390_pkt_hdr rx_frame;
 	int num_rx_pages = ei_local->stop_page-ei_local->rx_start_page;
+
+	//get where we are in the write chain
+	struct e194_list_node *current_list_node; 
+    struct e194_buffer *temp;
+    struct e194_chain_head *chain_head;
+
     
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
     
 	while (++rx_pkt_count < 10) {
 		int pkt_len;
         unsigned pkt_stat;
-	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, (unsigned int) virt_to_bus(ei_local->write), (void *) ei_local->write);
-                
+   		
+	    current_list_node = ei_local->current_write_chain;
+        printk(KERN_INFO "%s: \t\tcurrent_list_node=0x%X\n", dev->name, current_list_node);
+
+   		//if we reach the end of our write chain, just get out
+   		if (current_list_node == NULL){
+   			ei_local->current_write_chain = ei_local->active_write_chains;
+		    current_list_node = ei_local->current_write_chain;
+   			printk(KERN_INFO "%s: \t\treached NULL list node, restarting from 0x%X\n", dev->name, current_list_node);
+   		}     
+	    chain_head = current_list_node->this;
+
+        //shuffle the chain which reloops the buffers
+        shuffle(chain_head);
+
+    	temp = chain_head->write;
+
+    	//reached a buffer that isn't ready, update the current_write_chain
+        if (!(temp->df & 0x03)){
+        	printk(KERN_INFO "%s:\t\tbuffer isn't ready\n", dev->name);
+        	ei_local->current_write_chain = current_list_node->next;
+        	continue;
+        }
+
+        printk(KERN_INFO "%s: \t\tbuffer ready to be written df=0x%X\n", dev->name, temp->df);
+
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
-        if (ei_local->write == 0x0) {
-            printk(KERN_INFO "%s: buffer chain ended. \n", dev->name);
-            break;
-        }
+        // if (ei_local->write == 0x0) {
+        //     printk(KERN_INFO "%s: buffer chain ended. \n", dev->name);
+        //     break;
+        // }
 
-        // If we hit a not ready buffer, we're dont, bail
+        // If we hit a not ready buffer, we're done, bail
         // we should also shuffle buffers
-        if(!(ei_local->write->df & 0x03)){
-        	printk(KERN_INFO "%s: \t\tbuffer isn't ready...", dev->name);
-        	if(ei_local->write == ei_local->write_free){
-        		//there's no free buffers... sad
-        	} else {
-        		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
-        		//they're not the same, we have some free buffers, shuffle time
-        		temp = ei_local->write_free;
-        		while(bus_to_virt(temp->nphy) != ei_local->write){
-        			temp->df = 0x00;
-        			temp = bus_to_virt(temp->nphy);
-        		}
-        		//temp points to the one before whatever isn't ready
+   //      if(!(ei_local->write->df & 0x03)){
+   //      	printk(KERN_INFO "%s: \t\tbuffer isn't ready...", dev->name);
+   //      	if(ei_local->write == ei_local->write_free){
+   //      		//there's no free buffers... sad
+   //      	} else {
+   //      		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+   //      		//they're not the same, we have some free buffers, shuffle time
+   //      		temp = ei_local->write_free;
+   //      		while(bus_to_virt(temp->nphy) != ei_local->write){
+   //      			temp->df = 0x00;
+   //      			temp = bus_to_virt(temp->nphy);
+   //      		}
+   //      		//temp points to the one before whatever isn't ready
 
-        		temp->nphy = virt_to_bus(NULL);
-        		ei_local->write_end->nphy = virt_to_bus(ei_local->write_free);
-        		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should not be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
-        		ei_local->write_end = temp;
-        		ei_local->write_free = ei_local->write;
-        		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
-        	}
-			ei_outb_p(ENISR_RDC+ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
-        	break;
-        }
-        
-        pkt_len = ei_local->write->cnt;
+   //      		temp->nphy = virt_to_bus(NULL);
+   //      		ei_local->write_end->nphy = virt_to_bus(ei_local->write_free);
+   //      		printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should not be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+   //      		ei_local->write_end = temp;
+   //      		ei_local->write_free = ei_local->write;
+   //      		// printk(KERN_INFO "%s: SHUFFLE TIME! write_end->nphy=0x%X (should be null)\n", dev->name, (uint32_t) ei_local->write_end->nphy);
+   //      	}
+			// ei_outb_p(ENISR_RDC+ENISR_RX+ENISR_RX_ERR, e8390_base+EN0_ISR);
+   //      	break;
+   //      }
+       	
+       	//temp is ready to be written out
+
+        pkt_len = temp->cnt;
+
+        printk(KERN_INFO "%s: \t\tpacket length=%i\n", dev->name, temp->cnt);
         // Ahh, this is the RSR.
         // Switch to page 0 just in case.
         outb(E8390_PAGE0, dev->base_addr + E8390_CMD);
@@ -1153,24 +1233,23 @@ static void __eth194_ei_receive(struct net_device *dev)
 			skb = netdev_alloc_skb(dev, pkt_len + 2);
 			if (skb == NULL) {
 				if (ei_debug > 1)
-					netdev_dbg(dev, "Couldn't allocate a sk_buff of size %d\n",
-						   pkt_len);
+					netdev_dbg(dev, "Couldn't allocate a sk_buff of size %d\n", pkt_len);
 				dev->stats.rx_dropped++;
 				break;
 			} else {
 				skb_reserve(skb, 2);	/* IP headers on 16 byte boundaries */
 				skb_put(skb, pkt_len);	/* Make room */
 				// ei_block_input(dev, pkt_len, skb, current_offset + sizeof(rx_frame));
-                printk(KERN_INFO "%s: \t\tmemcpy from d=0x%x to skb at %p...\n", dev->name, ei_local->write->d, skb->data);
-                memcpy(skb->data, ei_local->write->d, pkt_len);
+                printk(KERN_INFO "%s: \t\tmemcpy from d=0x%x to skb at %p...\n", dev->name, temp->d, skb->data);
+                memcpy(skb->data, temp->d, pkt_len);
 
                 //clear out flags
                 printk(KERN_INFO "%s: \t\tclearing out flags\n", dev->name);
-                ei_local->write->df = 0x00;
+                temp->df = 0x00;
 
-                // Throw it away. TODO: ...don't throw it away
+                //Advance our write pointer
                 printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, ei_local->write->nphy);
-                ei_local->write = bus_to_virt(ei_local->write->nphy);
+                chain_head->write = bus_to_virt(temp->nphy);
                 
 				skb->protocol = eth_type_trans(skb, dev);
 				if (!skb_defer_rx_timestamp(skb))
@@ -1201,7 +1280,9 @@ static void __eth194_ei_receive(struct net_device *dev)
 		}
 		// ei_local->current_page = next_frame;
 		// ei_outb_p(next_frame-1, e8390_base+EN0_BOUNDARY);
-		printk(KERN_INFO "%s\n", dev->name);
+
+		//update our write chain
+		ei_local->current_write_chain = current_list_node->next;
 	}
 
 	// comment: combined this with last outb
@@ -1354,6 +1435,10 @@ int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *d
 
 	//get the device
 	eth194 = get_eth194();
+
+	if(eth194 == NULL){
+		return -1;
+	}
 
 	//go through the tables and find non-null entries
 	mac_1 = eth194->mac_table;
@@ -1519,6 +1604,9 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 
         //set the head of the buffer
         chain_head->chain = right;
+
+        //set the end of the buffer
+        chain_head->chain_end = right + (MAC_BUFFER_CHAIN_SIZE - 1);
 
         //add chain_head to tlb
         mac_temp[addr[5]] = chain_head;

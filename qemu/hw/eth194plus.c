@@ -196,12 +196,7 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
     cpu_physical_memory_read(s->tblw, &tbl, sizeof(uint32_t) * TABLE_SIZE);
     next_tbl = tbl[src[0]];
     
-    for (i = 0; i < 256; i++)
-        printf("%x: %x ", i, tbl[i]);
-    printf("\n");
-    
     printf("ETH194+: pointer to next table at index 0x%x appears to be 0x%08x\n", src[0], next_tbl);
-    
     
     return s->curw;
 }

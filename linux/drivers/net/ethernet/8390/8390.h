@@ -113,7 +113,7 @@ struct ei_device {
     struct e194_buffer *write_free; //first free buffer
     struct e194_buffer *write_end; //last buffer in chain
 
-    uint32_t **mac_table; // Array of pointers. Size 256, but no one knows that.
+    uint32_t *mac_table; // Array of pointers. Size 256, but no one knows that.
     struct e194_list_node* active_write_chains;
     
 };

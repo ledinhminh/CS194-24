@@ -212,6 +212,17 @@ static void __eth194_tx_intr(struct net_device *dev);
 // Just give up and include the damn thing.
 #include "lib8390.c"
 
+// Keep the include happy.
+// This is actually not supposed to work at all, so we are blessed that 8390.o is included somewhere else...
+static int __ei_open(struct net_device *dev) __attribute__((used));
+static int __ei_close(struct net_device *dev) __attribute__((used));
+static netdev_tx_t __ei_start_xmit(struct sk_buff *skb, struct net_device *dev) __attribute__((used));
+static irqreturn_t __ei_interrupt(int irq, void *dev_id) __attribute__((used));
+static struct net_device_stats *__ei_get_stats(struct net_device *dev) __attribute__((used));
+static void __ei_set_multicast_list(struct net_device *dev) __attribute__((used));
+static struct net_device *____alloc_ei_netdev(int size) __attribute__((used));
+static void __ei_tx_timeout(struct net_device *dev) __attribute__((used));
+
 /* ---- No user-serviceable parts below ---- */
 
 #define NE_BASE	 (dev->base_addr)
@@ -287,7 +298,7 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
 	long ioaddr;
 	int flags = pci_clone_list[chip_idx].flags;
 
-	struct e194_buffer *read;
+	// struct e194_buffer *read;
 	struct e194_buffer *write;
 	struct e194_buffer *temp;
   	uint32_t wpoint, tbl_ptr;
@@ -502,8 +513,8 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     //Allocate mac_buffer
     ei_status.mac_table = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
     memset(ei_status.mac_table, 0, sizeof(uint32_t) * 256);
-    printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, (void *) &ei_status);
-    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, (void *) ei_status.mac_table);
+    printk(KERN_INFO "%s: ei_status = 0x%p", dev->name, &ei_status);
+    printk(KERN_INFO "%s: MAC TABLE IS AT 0x%p\n", dev->name, ei_status.mac_table);
     
     printk(KERN_INFO "%s: writing TBLW[0..3]...\n", dev->name);
     
@@ -712,6 +723,8 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 
 	printk(KERN_INFO "%s: CURR = %d\n", dev->name, curr);
 	if (!(inb(nic_base + EN3_CURR0) | inb(nic_base + EN3_CURR1) | inb(nic_base + EN3_CURR2) | inb(nic_base + EN3_CURR3))) {
+        unsigned read_bus_addr;
+        
 		// CURR is null. Give it a buffer.
 		printk(KERN_INFO "%s: CURR is null...\n", dev->name);
 		if (ei_status.read == 0x0) { // Nothing in our buffer chain yet.
@@ -732,7 +745,7 @@ static void ne2k_pci_block_output(struct net_device *dev, int count,
 
 		printk(KERN_INFO "%s: Updating CURR\n", dev->name);
 
-		unsigned read_bus_addr = virt_to_bus(ei_status.read);
+		read_bus_addr = virt_to_bus(ei_status.read);
 
 	    outb(read_bus_addr, nic_base + EN3_CURR0);
 	    outb(read_bus_addr >> 8, nic_base + EN3_CURR1);
@@ -1065,11 +1078,11 @@ static void __eth194_ei_receive(struct net_device *dev)
 {
 	unsigned long e8390_base = dev->base_addr;
 	struct ei_device *ei_local = netdev_priv(dev);
-	unsigned char rxing_page, this_frame, next_frame;
-	unsigned short current_offset;
+	// unsigned char rxing_page, this_frame, next_frame;
+	// unsigned short current_offset;
 	int rx_pkt_count = 0;
 	struct e8390_pkt_hdr rx_frame;
-	int num_rx_pages = ei_local->stop_page-ei_local->rx_start_page;
+	// int num_rx_pages = ei_local->stop_page-ei_local->rx_start_page;
     
 	outb(E8390_PAGE3, e8390_base + E8390_CMD);
     
@@ -1078,7 +1091,7 @@ static void __eth194_ei_receive(struct net_device *dev)
         unsigned pkt_stat;
 	    struct e194_buffer *temp;
 
-        printk(KERN_INFO "%s: \t\twrite bus_head=0x%X virt_head=0x%X\n", dev->name, (unsigned int) virt_to_bus(ei_local->write), (void *) ei_local->write);
+        printk(KERN_INFO "%s: \t\twrite bus_head=0x%lx, virt_head=0x%lx\n", dev->name, (unsigned long) virt_to_bus(ei_local->write), (unsigned long) ei_local->write);
                 
         // If we're done, bail
 		// THIS IS BAD WE SHOULDN'T BE RUNNING OUT OF BUFFERS
@@ -1089,7 +1102,7 @@ static void __eth194_ei_receive(struct net_device *dev)
 
         // If we hit a not ready buffer, we're dont, bail
         // we should also shuffle buffers
-        if(!(ei_local->write->df & 0x03)){
+        if(!(ei_local->write->df & 0x03)) {
         	printk(KERN_INFO "%s: \t\tbuffer isn't ready...", dev->name);
         	if(ei_local->write == ei_local->write_free){
         		//there's no free buffers... sad
@@ -1161,7 +1174,7 @@ static void __eth194_ei_receive(struct net_device *dev)
 				skb_reserve(skb, 2);	/* IP headers on 16 byte boundaries */
 				skb_put(skb, pkt_len);	/* Make room */
 				// ei_block_input(dev, pkt_len, skb, current_offset + sizeof(rx_frame));
-                printk(KERN_INFO "%s: \t\tmemcpy from d=0x%x to skb at %p...\n", dev->name, ei_local->write->d, skb->data);
+                printk(KERN_INFO "%s: \t\tmemcpy from d=0x%lx to skb at 0x%lx...\n", dev->name, (unsigned long) ei_local->write->d, (unsigned long) skb->data);
                 memcpy(skb->data, ei_local->write->d, pkt_len);
 
                 //clear out flags
@@ -1194,11 +1207,11 @@ static void __eth194_ei_receive(struct net_device *dev)
 		// next_frame = rx_frame.next;
 
 		/* This _should_ never happen: it's here for avoiding bad clones. */
-		if (next_frame >= ei_local->stop_page) {
-			netdev_notice(dev, "next frame inconsistency, %#2x\n",
-				      next_frame);
-			next_frame = ei_local->rx_start_page;
-		}
+		// if (next_frame >= ei_local->stop_page) {
+			// netdev_notice(dev, "next frame inconsistency, %#2x\n",
+				      // next_frame);
+			// next_frame = ei_local->rx_start_page;
+		// }
 		// ei_local->current_page = next_frame;
 		// ei_outb_p(next_frame-1, e8390_base+EN0_BOUNDARY);
 		printk(KERN_INFO "%s\n", dev->name);
@@ -1311,9 +1324,9 @@ module_exit(ne2k_pci_cleanup);
  * Only cuz linking it is easier
  */
 #include <linux/proc_fs.h>
-
-struct ei_device* get_eth194(){
-
+#pragma GCC diagnostic ignored "-Wuninitialized"
+struct ei_device* get_eth194(void) {
+    // We know. Silence, ye.
 	struct ei_device *ei_local;
 	struct net_device *dev;
 
@@ -1338,8 +1351,7 @@ struct ei_device* get_eth194(){
 	return ei_local;    
 }
 
-
-int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
+int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data) {
 	int len, a, b, c, d, e, f;
 	struct ei_device *eth194;
 	uint32_t* mac_1;
@@ -1357,58 +1369,60 @@ int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *d
 
 	//go through the tables and find non-null entries
 	mac_1 = eth194->mac_table;
-	for (a = 0; a < 256; a++){
-		//start going through the layers....
-		if (bus_to_virt(*mac_1) != bus_to_virt(NULL)){
-			mac_2 = bus_to_virt(*mac_1);
-			
-			for (b = 0; b < 256; b++){
-				if (bus_to_virt(*mac_2) != bus_to_virt(NULL)){
-					mac_3 = bus_to_virt(*mac_2);
+    for (a = 0; a < 256; a++){
+    //start going through the layers....
+    if (bus_to_virt(*mac_1) != bus_to_virt((phys_addr_t) NULL)) {
+    mac_2 = bus_to_virt(*mac_1);
 
-					for(c = 0; c < 256; c++){
-						if(bus_to_virt(*mac_3) != bus_to_virt(NULL)){
-							mac_4 = bus_to_virt(*mac_3);
+    for (b = 0; b < 256; b++){
+    if (bus_to_virt(*mac_2) != bus_to_virt((phys_addr_t) NULL)) {
+    mac_3 = bus_to_virt(*mac_2);
 
-							for(d = 0; d < 256; d++){
-								if(bus_to_virt(*mac_4) != bus_to_virt(NULL)){
+    for(c = 0; c < 256; c++){
+    if(bus_to_virt(*mac_3) != bus_to_virt((phys_addr_t) NULL)) {
+    mac_4 = bus_to_virt(*mac_3);
 
-									mac_5 = bus_to_virt(*mac_4);
-									for (e = 0; e < 256; e++){
-										if(bus_to_virt(*mac_5) != bus_to_virt(NULL)){
+    for(d = 0; d < 256; d++){
+    if(bus_to_virt(*mac_4) != bus_to_virt((phys_addr_t) NULL)) {
 
-											mac_6 = bus_to_virt(*mac_5);
-											for (f = 0; f< 256; f++){
-												if(bus_to_virt(*mac_6) != bus_to_virt(NULL)){
-													// printk("MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
-													len += sprintf(buf+len, "MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
-												}
+    mac_5 = bus_to_virt(*mac_4);
+    for (e = 0; e < 256; e++){
+    if(bus_to_virt(*mac_5) != bus_to_virt((phys_addr_t) NULL)) {
 
-												mac_6 += 1;
-											}
+    mac_6 = bus_to_virt(*mac_5);
+    for (f = 0; f< 256; f++){
+    if(bus_to_virt(*mac_6) != bus_to_virt((phys_addr_t) NULL)) {
+                                                
+    // printk("MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
+    len += sprintf(buf+len, "MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
+    
+    }
 
-										}
-										mac_5 += 1;
-									}
+    mac_6 += 1;
+    }
 
-								}
-								mac_4 += 1;
-							}
+    }
+    mac_5 += 1;
+    }
 
-						}
-						mac_3 += 1;
-					}
-				}
-				mac_2 += 1;
-			}
-		}
-		mac_1 += 1;
-	}
+    }
+    mac_4 += 1;
+    }
 
-	return len;
+    }
+    mac_3 += 1;
+    }
+    }
+    mac_2 += 1;
+    }
+    }
+    mac_1 += 1;
+    }
+
+    return len;
 }
 
-int eth_write(struct file *file, const char *buf, int count, void *data) {
+int eth_write(struct file *file, const char *buf, unsigned long count, void *data) {
     // Is that even possible?
 	char proc_data[count + 1];
     unsigned char addr[6] = {0, 0, 0, 0, 0, 0};
@@ -1423,10 +1437,11 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 
     struct e194_buffer *temp;
     struct e194_chain_head *chain_head;
+    
 	// check to make sure there's only 12
 	// count will be 13 because of the newline from echo
 	if (count != 13) {
-		printk("count is %i which is not 13", count);
+		printk("count is %lu which is not 13", count);
 		return -1;
 	}
 
@@ -1437,7 +1452,7 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 	proc_data[count] = '\0';
 
 	// try to get the integer out
-	ret = kstrtoull(&proc_data, 16, &addr_long);
+	ret = kstrtoull((char *) &proc_data, 16, &addr_long);
 	if (ret != 0)
 		return ret;
 
@@ -1461,7 +1476,7 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 			continue;
 		}
 		if (strcmp("Berkeley ETH194", ei_local->name) == 0) {
-			printk("FOUND IT: ei_local=0x%X\n", ei_local);
+			printk("FOUND IT: ei_local=0x%p\n", ei_local);
 			break;
 		} else {
 			dev = next_net_device(dev);
@@ -1470,30 +1485,31 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
     
 	ei_local = netdev_priv(dev);
 
-    
-    printk("size of uint32_t is %u\n", sizeof(uint32_t));
 	mac_temp = ei_local->mac_table;
-    printk(KERN_INFO "%s: mac_table at 0x%x\n", dev->name, mac_temp);
+    printk(KERN_INFO "%s: mac_table at 0x%p\n", dev->name, mac_temp);
     
     for (i = 0; i < 5; i++) { 
-        mac_temp_next = mac_temp[addr[i]];
+        mac_temp_next = (uint32_t *) ((uint64_t) mac_temp[addr[i]]);
         
-        printk(KERN_INFO "%s: next for byte #%d 0x%02x is 0x%x\n", dev->name, i, addr[i], mac_temp_next);
+        printk(KERN_INFO "%s: next for byte #%d 0x%02x is 0x%lx\n", dev->name, i, addr[i], (unsigned long) mac_temp_next);
         
         if (mac_temp_next == 0) {
             mac_temp_next = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
             mac_temp[addr[i]] = virt_to_bus(mac_temp_next);
             memset(mac_temp_next, 0, sizeof(uint32_t) * 256);
-            printk(KERN_INFO "%s: allocated next table at 0x%x (bus address 0x%x): 0x%x = mac_temp[0x%x] = 0x%x\n", dev->name, mac_temp_next, virt_to_bus(mac_temp_next), mac_temp + addr[i], addr[i], mac_temp[addr[i]]);
+            printk(KERN_INFO "%s: allocated next table at 0x%lx: mac_temp[0x%x] = 0x%x\n", dev->name, (unsigned long) mac_temp_next, addr[i], mac_temp[addr[i]]);
         	mac_temp = mac_temp_next;
         } else {
-        	mac_temp = bus_to_virt(mac_temp_next);
+        	mac_temp = bus_to_virt((phys_addr_t) mac_temp_next);
             printk(KERN_INFO "%s: table already allocated\n", dev->name);
         }
         
     }
     
     if (mac_temp[addr[5]] == 0) {
+        uint32_t curw;
+        struct e194_list_node *to_add;
+        struct e194_list_node *node;
 
     	//allocate a buffer, add it to the chain head
         struct e194_buffer *right = kmalloc(sizeof(struct e194_buffer) * MAC_BUFFER_CHAIN_SIZE, GFP_DMA | GFP_KERNEL);
@@ -1503,7 +1519,7 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
         for (i = 0; i < MAC_BUFFER_CHAIN_SIZE - 1; i++){
 	    	temp = right + i; //because type is implied
 	    	temp->nphy = virt_to_bus(temp + 1);
-	    	printk(KERN_INFO "%s: current=0x%x\tnext=0x%x\n", dev->name, virt_to_bus(temp), temp->nphy);
+	    	printk(KERN_INFO "%s: current=0x%x\tnext=0x%x\n", dev->name, (unsigned int) virt_to_bus(temp), temp->nphy);
 	    }
 
     	//allocate a chain head
@@ -1514,19 +1530,18 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
         chain_head->write = right;
 
         //set the curw
-        uint32_t curw = virt_to_bus(right);
+        curw = virt_to_bus(right);
         chain_head->curw = curw;
 
         //set the head of the buffer
         chain_head->chain = right;
 
         //add chain_head to tlb
-        mac_temp[addr[5]] = chain_head;
-        printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%x\n", dev->name, addr[5], (void*) right);
+        mac_temp[addr[5]] = (uint32_t) virt_to_bus(chain_head);
+        printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%lx\n", dev->name, addr[5], (unsigned long) right);
         
         //add it onto the active right chain
-        struct e194_list_node *to_add;
-        struct e194_list_node *node;
+        
         if(ei_local->active_write_chains == NULL){
         	//there's no active_chain yet, lets make one
         	node = kmalloc(sizeof(struct e194_list_node), GFP_DMA | GFP_KERNEL);
@@ -1554,7 +1569,7 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 	return count;
 }
 
-int eth_init(void){
+int eth_init(void) {
 	struct proc_dir_entry *e;
 
 	e = create_proc_entry("eth194", 0, NULL);
@@ -1564,9 +1579,8 @@ int eth_init(void){
 	return 0;
 }
 
-void eth_cleanup(void){
+void eth_cleanup(void) {
 	remove_proc_entry("eth194", NULL);
-
 }
 
 module_init(eth_init);

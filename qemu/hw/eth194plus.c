@@ -187,7 +187,7 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
     tbl_addr = s->tblw;
     
     for (i = 0; i < 6; i++) {
-        printf("table_addr %X\n", tbl_addr);
+        // printf("table_addr %X\n", tbl_addr);
         if (tbl_addr == 0) {
             printf("ETH194+: No table here, using curw at 0x%x\n", s->curw);
             return s->curw;

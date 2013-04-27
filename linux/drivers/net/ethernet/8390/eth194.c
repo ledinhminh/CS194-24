@@ -1077,6 +1077,7 @@ static void __eth194_tx_intr(struct net_device *dev)
 void shuffle(struct e194_chain_head *chain_head){
 	struct e194_buffer *temp;
 	
+   	printk(KERN_INFO "eth0: \t\tshuffling...\n");
 	temp = chain_head->chain;
 	while (temp != chain_head->write){
 		if (bus_to_virt(temp->nphy) == chain_head->write)
@@ -1085,17 +1086,19 @@ void shuffle(struct e194_chain_head *chain_head){
 		temp = bus_to_virt(temp->nphy);
 	}
 
-	//set the nphy of the one before write to null
-	temp->nphy = bus_to_virt(0);
+	if (temp != chain_head->write){
+		//set the nphy of the one before write to null
+		temp->nphy = bus_to_virt(0);
 
-	//set the end to point to the head
-	chain_head->chain_end->nphy = bus_to_virt(chain_head->chain);
+		//set the end to point to the head
+		chain_head->chain_end->nphy = bus_to_virt(chain_head->chain);
 
-	//set the head to point to write
-	chain_head->chain = chain_head->write;
+		//set the head to point to write
+		chain_head->chain = chain_head->write;
 
-	//set the end of the chain
-	chain_head->chain_end = temp;
+		//set the end of the chain
+		chain_head->chain_end = temp;
+	}
 }
 /**
  * ei_receive - receive some packets
@@ -1132,7 +1135,6 @@ static void __eth194_ei_receive(struct net_device *dev)
 
    		
 	    current_list_node = ei_local->current_write_chain;
-        printk(KERN_INFO "%s: \t\tcurrent_list_node=0x%X\n", dev->name, current_list_node);
 
    		//if we reach the end of our write chain, just get out
    		if (current_list_node == NULL){
@@ -1140,12 +1142,14 @@ static void __eth194_ei_receive(struct net_device *dev)
 		    current_list_node = ei_local->current_write_chain;
    			printk(KERN_INFO "%s: \t\treached NULL list node, restarting from 0x%X\n", dev->name, current_list_node);
    		}     
+        printk(KERN_INFO "%s: \t\tcurrent_list_node=0x%X\n", dev->name, current_list_node);
 	    chain_head = current_list_node->this;
 
         //shuffle the chain which reloops the buffers
         shuffle(chain_head);
 
     	temp = chain_head->write;
+        printk(KERN_INFO "%s: \t\tBUFFER that we're reading from chain_head=0x%X temp=0x%X\n", dev->name, chain_head, virt_to_bus(temp));
 
     	//reached a buffer that isn't ready, update the current_write_chain
         if (!(temp->df & 0x03)){
@@ -1194,7 +1198,7 @@ static void __eth194_ei_receive(struct net_device *dev)
 
         pkt_len = temp->cnt;
 
-        printk(KERN_INFO "%s: \t\tpacket length=%i\n", dev->name, temp->cnt);
+        printk(KERN_INFO "%s: \t\tbuffer addresss=0x%X next buffer=0x%X packet length=%i\n", dev->name, virt_to_bus(temp), temp->nphy, temp->cnt);
         // Ahh, this is the RSR.
         // Switch to page 0 just in case.
         outb(E8390_PAGE0, dev->base_addr + E8390_CMD);
@@ -1248,7 +1252,7 @@ static void __eth194_ei_receive(struct net_device *dev)
                 temp->df = 0x00;
 
                 //Advance our write pointer
-                printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, ei_local->write->nphy);
+                printk(KERN_INFO "%s: \t\tmoving to nphy=0x%x\n", dev->name, temp->nphy);
                 chain_head->write = bus_to_virt(temp->nphy);
                 
 				skb->protocol = eth_type_trans(skb, dev);

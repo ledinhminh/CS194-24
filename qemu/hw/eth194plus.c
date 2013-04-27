@@ -176,29 +176,30 @@ int eth194plus_can_receive(NetClientState *nc)
 
 uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
     // Time to traverse the tables.
-    uint32_t tbl[TABLE_SIZE]; // 256 = possible values of uint8_t
-    uint32_t next_tbl;
+    uint32_t tbl[256];
+    uint32_t tbl_addr;
     int i;
     
     printf("ETH194+: getting buffer chain for mac %02x%02x%02x%02x%02x%02x\n", src[0], src[1], src[2], src[3], src[4], src[5]);
     
     printf("ETH194+: s->curw=0x%02x, s->tblw=0x%02x\n", s->curw, s->tblw);
     
-    printf("size of uint32_t is %u\n", sizeof(uint32_t));
+    tbl_addr = s->tblw;
     
-    if (s->tblw == 0) {
-        printf("ETH194+: No tblw, using curw\n");
-        return s->curw;
+    for (i = 0; i < 6; i++) { 
+        if (tbl_addr == 0) {
+            printf("ETH194+: No table here, using curw at 0x%x\n", s->curw);
+            return s->curw;
+        }
+        
+        // printf("ETH194+: Traversing table for byte %u from 0x%x...\n", i, tbl_addr);
+        cpu_physical_memory_read(tbl_addr, &tbl, sizeof(uint32_t) * TABLE_SIZE);
+        tbl_addr = tbl[src[i]];
+        // printf("ETH194+: pointer to next table at index 0x%x appears to be 0x%08x\n", src[i], tbl_addr);
     }
     
-    printf("ETH194+: Traversing first table, reading %d bytes...\n", sizeof(uint32_t) * TABLE_SIZE);
-    // Get the first table
-    cpu_physical_memory_read(s->tblw, &tbl, sizeof(uint32_t) * TABLE_SIZE);
-    next_tbl = tbl[src[0]];
-    
-    printf("ETH194+: pointer to next table at index 0x%x appears to be 0x%08x\n", src[0], next_tbl);
-    
-    return s->curw;
+    printf("ETH194+: Have special buffer chain at 0x%x\n", tbl_addr);
+    return tbl_addr;
 }
 
 #define MIN_BUF_SIZE 60

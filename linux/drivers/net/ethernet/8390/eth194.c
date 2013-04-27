@@ -1471,9 +1471,9 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
         
         if (mac_temp_next == 0) {
             mac_temp_next = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
-            mac_temp[addr[i]] = mac_temp_next;
+            mac_temp[addr[i]] = virt_to_bus(mac_temp_next);
             memset(mac_temp_next, 0, sizeof(void*) * 256);
-            printk(KERN_INFO "%s: allocated next table at 0x%x\n", dev->name, mac_temp_next);
+            printk(KERN_INFO "%s: allocated next table at 0x%x (bus address 0x%x): mac_temp[0x%x] = 0x%x\n", dev->name, mac_temp_next, virt_to_bus(mac_temp_next), addr[i], mac_temp[addr[i]]);
         } else {
             printk(KERN_INFO "%s: table already allocated\n", dev->name);
         }

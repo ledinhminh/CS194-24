@@ -178,6 +178,7 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
     // Time to traverse the tables.
     uint32_t tbl[TABLE_SIZE]; // 256 = possible values of uint8_t
     uint32_t next_tbl;
+    int i;
     
     printf("ETH194+: getting buffer chain for mac %02x%02x%02x%02x%02x%02x\n", src[0], src[1], src[2], src[3], src[4], src[5]);
     
@@ -188,10 +189,14 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
         return s->curw;
     }
     
-    printf("ETH194+: Traversing first table...\n");
+    printf("ETH194+: Traversing first table, reading %d bytes...\n", sizeof(uint32_t) * TABLE_SIZE);
     // Get the first table
     cpu_physical_memory_read(s->tblw, &tbl, sizeof(uint32_t) * TABLE_SIZE);
     next_tbl = tbl[src[0]];
+    
+    for (i = 0; i < 256; i++)
+        printf("%x: %x ", i, tbl[i]);
+    printf("\n");
     
     printf("ETH194+: pointer to next table at index 0x%x appears to be 0x%08x\n", src[0], next_tbl);
     

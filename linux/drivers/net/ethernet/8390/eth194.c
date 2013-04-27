@@ -1301,20 +1301,110 @@ module_exit(ne2k_pci_cleanup);
  */
 #include <linux/proc_fs.h>
 
-int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
-	int len = 0;
-	struct ei_device *eth194;
+struct ei_device* get_eth194(){
 
-	printk("DATA: 0x%X\n", data);
-	eth194 = (struct ei_device *) data;
-	len = sprintf(buf+len, "HELLO THERE FROM PROC, MAC_BUFFER IS IN 0x%X\n", eth194->mac_table);
+	struct ei_device *ei_local;
+	struct net_device *dev;
+
+	//gotta find the net device....
+	dev = first_net_device(&init_net);
+	while (dev) {
+		ei_local = netdev_priv(dev);
+		// printk(KERN_INFO "got [%s]\n", ei_local->name);
+		if (ei_local->name == NULL) {
+			dev = next_net_device(dev);
+			continue;
+		}
+
+		if (strcmp("Berkeley ETH194", ei_local->name) == 0) {
+			// printk("FOUND IT: ei_local=0x%X\n", ei_local);
+			break;
+		} else {
+			dev = next_net_device(dev);
+		}
+	}
+	
+	return ei_local;    
+}
+
+
+int eth_read(char *buf, char **start, off_t offset, int count, int *eof, void *data){
+	int len, a, b, c, d, e, f;
+	struct ei_device *eth194;
+	void** mac_1;
+	void** mac_2;
+	void** mac_3;
+	void** mac_4;
+	void** mac_5;
+	void** mac_6;
+
+	len = 0;
+	len += sprintf(buf+len, "MAC addresses currently tracked:\n");
+
+	//get the device
+	eth194 = get_eth194();
+
+	//go through the tables and find non-null entries
+	mac_1 = eth194->mac_table;
+	for (a = 0; a < 256; a++){
+		//start going through the layers....
+		if (*mac_1 != 0){
+			mac_2 = *mac_1;
+			
+			for (b = 0; b < 256; b++){
+				if (*mac_2 != 0){
+					mac_3 = *mac_2;
+
+					for(c = 0; c < 256; c++){
+						if(*mac_3 != 0){
+							mac_4 = *mac_3;
+
+							for(d = 0; d < 256; d++){
+								if(*mac_4 != 0){
+
+									mac_5 = *mac_4;
+									for (e = 0; e < 256; e++){
+										if(*mac_5 != 0){
+
+											mac_6 = *mac_5;
+											for (f = 0; f< 256; f++){
+												if(*mac_6 != 0){
+													printk("MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
+													printk("CHAIN=%X--%X--%X--%X--%X--%X\n", *mac_1, *mac_2, *mac_3, *mac_4, *mac_5, *mac_6);
+													len += sprintf(buf+len, "MAC=%X:%X:%X:%X:%X:%X\n", a, b, c, d, e, f);
+												}
+
+												mac_6 += 1;
+											}
+
+										}
+										mac_5 += 1;
+									}
+
+								}
+								mac_4 += 1;
+							}
+
+						}
+						mac_3 += 1;
+					}
+				}
+				mac_2 += 1;
+			}
+		}
+		mac_1 += 1;
+	}
+
+	len += sprintf(buf+len, "HELLO THERE FROM PROC, MAC_BUFFER IS IN 0x%X\n", eth194->mac_table);
+
+
 	return len;
 }
 
 int eth_write(struct file *file, const char *buf, int count, void *data) {
     // Is that even possible?
 	char proc_data[count + 1];
-    char addr[6] = {0, 0, 0, 0, 0, 0};
+    unsigned char addr[6] = {0, 0, 0, 0, 0, 0};
 	unsigned long long addr_long;
     int i = 0;
 	int ret;
@@ -1348,9 +1438,9 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 
     // MAC addresses come off the wire MSB first. So we do it too.
     for (i = 0; i < 6; i++)
-        addr[5 - i] = ((addr_long & (0xFFL << (8 * i))) >> (8 * i));
+        addr[5 - i] = ((addr_long & (0xFFUL << (8 * i))) >> (8 * i));
         
-    printk(KERN_INFO "got mac %02x%02x%02x%02x%02x%02x\n", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+    printk(KERN_INFO "got mac %x:%x:%x:%x:%x:%x\n", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
 
 	//gotta find the net device....
 	dev = first_net_device(&init_net);

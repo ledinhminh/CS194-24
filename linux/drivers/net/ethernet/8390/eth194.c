@@ -134,6 +134,7 @@ static struct {
 	{"Holtek HT80229", ONLY_32BIT_IO | HOLTEK_FDX | STOP_PG_0x60 },
 	{"Winbond W89C940(misprogrammed)", 0},
     {"Berkeley ETH194", 0}, // What is 0?
+    {"Berkeley ETH194", 0}, // What is 0?
 	{NULL,}
 };
 
@@ -151,6 +152,7 @@ static DEFINE_PCI_DEVICE_TABLE(ne2k_pci_tbl) = {
 	{ 0x12c3, 0x5598, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Holtek_HT80229 },
 	{ 0x8c4a, 0x1980, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Winbond_89C940_8c4a },
     { 0x0ca1, 0xe195, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_194 },
+    { 0x0ca1, 0xe194, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_194 },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, ne2k_pci_tbl);
@@ -175,8 +177,8 @@ struct e194_chain_head {
 	struct e194_buffer *chain;
 } __attribute__((packed));
 
-#define WRITE_CHAIN_SIZE 32 
-#define MAC_BUFFER_CHAIN_SIZE 5 
+#define WRITE_CHAIN_SIZE 1024 
+#define MAC_BUFFER_CHAIN_SIZE 32 
 // #define E8390_PAGE0     0x00    /* Select page chip registers */
 // #define E8390_PAGE1     0x40    /* using the two high-order bits */
 // #define E8390_PAGE2     0x80    /* Page 3 is invalid. */
@@ -1494,14 +1496,8 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
     if (mac_temp[addr[5]] == 0) {
 
     	//allocate a buffer, add it to the chain head
-        struct e194_buffer *right = kmalloc(sizeof(struct e194_buffer), GFP_DMA | GFP_KERNEL);
-
-    	//allocate a chain head
-    	chain_head = kmalloc(sizeof(struct e194_chain_head), GFP_DMA | GFP_KERNEL);
-    	memset(chain_head, 0, sizeof(struct e194_chain_head));
-
-       	//clear out the write allocation 
-        memset(right, 0, sizeof(struct e194_buffer));
+        struct e194_buffer *right = kmalloc(sizeof(struct e194_buffer) * MAC_BUFFER_CHAIN_SIZE, GFP_DMA | GFP_KERNEL);
+        memset(right, 0, sizeof(struct e194_buffer) * MAC_BUFFER_CHAIN_SIZE);
 
         //set the nphys
         for (i = 0; i < MAC_BUFFER_CHAIN_SIZE - 1; i++){
@@ -1510,6 +1506,11 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
 	    	printk(KERN_INFO "%s: current=0x%x\tnext=0x%x\n", dev->name, virt_to_bus(temp), temp->nphy);
 	    }
 
+    	//allocate a chain head
+    	chain_head = kmalloc(sizeof(struct e194_chain_head), GFP_DMA | GFP_KERNEL);
+    	memset(chain_head, 0, sizeof(struct e194_chain_head));
+
+    	//set the write
         chain_head->write = right;
 
         //set the curw
@@ -1519,6 +1520,7 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
         //set the head of the buffer
         chain_head->chain = right;
 
+        //add chain_head to tlb
         mac_temp[addr[5]] = chain_head;
         printk(KERN_INFO "%s: allocated buffer chain for byte 5 %02x at 0x%x\n", dev->name, addr[5], (void*) right);
         

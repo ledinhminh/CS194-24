@@ -184,6 +184,8 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
     
     printf("ETH194+: s->curw=0x%02x, s->tblw=0x%02x\n", s->curw, s->tblw);
     
+    printf("size of uint32_t is %u\n", sizeof(uint32_t));
+    
     if (s->tblw == 0) {
         printf("ETH194+: No tblw, using curw\n");
         return s->curw;

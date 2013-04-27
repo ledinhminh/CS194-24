@@ -490,7 +490,8 @@ static int __devinit ne2k_pci_init_one (struct pci_dev *pdev,
     printk(KERN_INFO "%s: wrote CURW[0..3]... curw=0x%X\n", dev->name, wpoint);
 
     //Allocate mac_buffer
-    ei_status.mac_table = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
+    ei_status.mac_table = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
+    memset(ei_status.mac_table, 0, sizeof(uint32_t) * 256);
     printk(KERN_INFO "%s: ei_status = 0x%X", dev->name, &ei_status);
     printk(KERN_INFO "%s: MAC TABLE IS AT 0x%X\n", dev->name, ei_status.mac_table);
     
@@ -1461,6 +1462,8 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
     
 	ei_local = netdev_priv(dev);
 
+    
+    printk("size of uint32_t is %u\n", sizeof(uint32_t));
 	mac_temp = ei_local->mac_table;
     printk(KERN_INFO "%s: mac_table at 0x%x\n", dev->name, mac_temp);
     
@@ -1470,10 +1473,10 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
         printk(KERN_INFO "%s: next for byte #%d 0x%02x is 0x%x\n", dev->name, i, addr[i], mac_temp_next);
         
         if (mac_temp_next == 0) {
-            mac_temp_next = kmalloc(sizeof(void*) * 256, GFP_DMA | GFP_KERNEL);
+            mac_temp_next = kmalloc(sizeof(uint32_t) * 256, GFP_DMA | GFP_KERNEL);
             mac_temp[addr[i]] = virt_to_bus(mac_temp_next);
-            memset(mac_temp_next, 0, sizeof(void*) * 256);
-            printk(KERN_INFO "%s: allocated next table at 0x%x (bus address 0x%x): mac_temp[0x%x] = 0x%x\n", dev->name, mac_temp_next, virt_to_bus(mac_temp_next), addr[i], mac_temp[addr[i]]);
+            memset(mac_temp_next, 0, sizeof(uint32_t) * 256);
+            printk(KERN_INFO "%s: allocated next table at 0x%x (bus address 0x%x): 0x%x = mac_temp[0x%x] = 0x%x\n", dev->name, mac_temp_next, virt_to_bus(mac_temp_next), mac_temp + addr[i], addr[i], mac_temp[addr[i]]);
         } else {
             printk(KERN_INFO "%s: table already allocated\n", dev->name);
         }
@@ -1489,6 +1492,11 @@ int eth_write(struct file *file, const char *buf, int count, void *data) {
     } else {
         printk(KERN_INFO "%s: buffer chain already allocated\n", dev->name);
     }
+    
+    for (i = 0; i < 256; i++) {
+        printk("%x: %x ", i, ei_local->mac_table[i]);
+    }
+    printk("\n");
     
     printk(KERN_INFO "mac_table[0x%x] = 0x%x\n", addr[0], ei_local->mac_table[addr[0]]);
     

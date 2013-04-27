@@ -33,6 +33,16 @@ slink /bin/which busybox 777 0 0
 slink /bin/ping busybox 777 0 0
 slink /bin/arp busybox 777 0 0
 
+slink /bin/vi busybox 777 0 0
+slink /bin/grep busybox 777 0 0
+slink /bin/fgrep busybox 777 0 0
+slink /bin/mv busybox 777 0 0
+slink /bin/cp busybox 777 0 0
+slink /bin/telnet busybox 777 0 0
+slink /bin/nc busybox 777 0 0
+slink /bin/ping busybox 777 0 0
+slink /bin/diff busybox 777 0 0
+
 # This contains a startup script for busybox
 file /bin/udhcp-script fs/udhcp-script 755 0 0
 
@@ -41,6 +51,8 @@ file /init fs/init 755 0 0
 
 # The code that's actually written for this class
 file /bin/httpd .obj/httpd 555 0 0
+file /bin/eth194_test.sh eth194_test/packet_gen.sh 555 0 0
 file /var/www/webclock .obj/webclock 555 0 0
 file /var/www/hourclock .obj/hourclock 555 0 0
 file /var/www/test.html www/test.html 666 0 0
+file /var/www/lorem.html www/lorem.html 666 0 0

@@ -7,64 +7,112 @@ monitor=""
 debug=""
 kvm=""
 memory="-m 512"
-net="-net nic,model=eth194plus -net user -redir tcp:8088::8088"
+redir=""
+card="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A "
+net1="-net user -net socket,listen=localhost:1234"
+net2="-net socket,connect=localhost:1234 "
+
+#net1="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A -net socket,mcast=230.0.0.1:1234"
+#net2="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0B -net socket,mcast=230.0.0.1:1234 "
+
 smp="-smp 4"
 
 while [[ "$1" != "" ]]
 do
     if [[ "$1" == "--pipe" ]]
     then
-	rm -f qemu_serial_pipe.* qemu_monitor_pipe.*
-	mkfifo qemu_serial_pipe.in
-	mkfifo qemu_serial_pipe.out
-	mkfifo qemu_monitor_pipe.in
-	mkfifo qemu_monitor_pipe.out
-	serial="--serial pipe:qemu_serial_pipe"
-	monitor="--monitor pipe:qemu_monitor_pipe"
-	append="--append console=ttyS0"
+				rm -f qemu_serial_pipe.* qemu_monitor_pipe.*
+				mkfifo qemu_serial_pipe.in
+				mkfifo qemu_serial_pipe.out
+				mkfifo qemu_monitor_pipe.in
+				mkfifo qemu_monitor_pipe.out
+				serial="--serial pipe:qemu_serial_pipe"
+				monitor="--monitor pipe:qemu_monitor_pipe"
+				append="--append console=ttyS0"
+    elif [[ "$1" == "--pipe0" ]]
+    then
+				rm -f qemu_serial_pipe0.* qemu_monitor_pipe0.*
+				mkfifo qemu_serial_pipe0.in
+				mkfifo qemu_serial_pipe0.out
+				mkfifo qemu_monitor_pipe0.in
+				mkfifo qemu_monitor_pipe0.out
+				serial="--serial pipe:qemu_serial_pipe0"
+				monitor="--monitor pipe:qemu_monitor_pipe0"
+				append="--append console=ttyS0"
+		elif [[ "$1" == "--pipe1" ]]
+		then
+				rm -f qemu_serial_pipe1.* qemu_monitor_pipe1.*
+				mkfifo qemu_serial_pipe1.in
+				mkfifo qemu_serial_pipe1.out
+				mkfifo qemu_monitor_pipe1.in
+				mkfifo qemu_monitor_pipe1.out
+				serial="--serial pipe:qemu_serial_pipe1"
+				monitor="--monitor pipe:qemu_monitor_pipe1"
+				append="--append console=ttyS0"
+		elif [[ "$1" == "--redir" ]]
+		then
+				redir="-redir $2"
+				shift
+		elif [[ "$1" == "--net" ]]
+    then
+				card="-net nic,model=$2"
+				shift
+	  elif [[ "$1" == "--node2" ]]
+		then
+				net1=$net2
     elif [[ "$1" == "--test" ]]
     then
-	timeout="timeout --foreground 30s"
+				timeout="timeout --foreground 30s"
     elif [[ "$1" == "--initrd" ]]
     then
-	initrd="$1 $2"
-	shift
+				initrd="$1 $2"
+				shift
     elif [[ "$1" == "--stdio" ]]
     then
-	append="--append console=ttyS0"
-	serial="--serial stdio"
+				append="--append console=ttyS0"
+				serial="--serial stdio"
     elif [[ "$1" == "--cleanup" ]]
     then
-	rm -f qemu_serial_pipe.in
-	rm -f qemu_serial_pipe.out
-	rm -f qemu_monitor_pipe.in
-	rm -f qemu_monitor_pipe.out
-	exit 0
+				rm -f qemu_serial_pipe.in
+				rm -f qemu_serial_pipe.out
+				rm -f qemu_monitor_pipe.in
+				rm -f qemu_monitor_pipe.out
+
+				rm -f qemu_serial_pipe0.in
+				rm -f qemu_serial_pipe0.out
+				rm -f qemu_monitor_pipe0.in
+				rm -f qemu_monitor_pipe0.out
+
+				rm -f qemu_serial_pipe1.in
+				rm -f qemu_serial_pipe1.out
+				rm -f qemu_monitor_pipe1.in
+				rm -f qemu_monitor_pipe1.out
+				exit 0
     elif [[ "$1" == "--debug" ]]
     then
-	gdb_port="1234"
-	debug="-gdb tcp::$gdb_port"
-	kvm="--no-kvm"
+				gdb_port="1234"
+				debug="-gdb tcp::$gdb_port"
+				kvm="--no-kvm"
 
-	# FIXME: gdb doesn't support kernel debugging during early
-	# init (unfortunately it actually breaks that running gdb
-	# instance) so we have to wait for until after Linux makes its
-	# 32->64 bit transition before attaching the GDB instance.
-	# This sleep aims to do that, but if you get errors about "bad
-	# 'g' packet, too long" then you'll have to INCREASE this
-	# sleep time.  Apparently fixing this requires hacking on GDB,
-	# something I'm not prepared to do right now.
-	#   -- palmer, Jan 14 2013
-	(
-	    sleep 5s ; \
-	    xfce4-terminal -x gdb $(readlink -f linux/vmlinux) \
-	                    -ex "target remote :1234"
-	) &
+				# FIXME: gdb doesn't support kernel debugging during early
+				# init (unfortunately it actually breaks that running gdb
+				# instance) so we have to wait for until after Linux makes its
+				# 32->64 bit transition before attaching the GDB instance.
+				# This sleep aims to do that, but if you get errors about "bad
+				# 'g' packet, too long" then you'll have to INCREASE this
+				# sleep time.  Apparently fixing this requires hacking on GDB,
+				# something I'm not prepared to do right now.
+				#   -- palmer, Jan 14 2013
+				(
+						sleep 5s ; \
+								xfce4-terminal -x gdb $(readlink -f linux/vmlinux) \
+	              -ex "target remote :1234"
+				) &
     fi
 
     shift
 done
 
-exec ./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
+./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $memory $net $smp
+    $initrd $append $serial $monitor $debug $kvm $memory $card $net1 $redir $smp

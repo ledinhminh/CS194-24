@@ -6,9 +6,10 @@
 #include "palloc.h"
 #include "http.h"
 
-struct mimetype
-{
-    int (*http_get)(struct mimetype *, struct http_session *);
+#define BUF_COUNT 4096
+
+struct mimetype {
+  int (*http_get)(struct mimetype *, struct http_session *);
 };
 
 void mimetype_init(struct mimetype *mt);

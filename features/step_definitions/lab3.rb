@@ -1,17 +1,13 @@
-# This code abstracts away getting a single line of output from QEMU.
-# There are two important considerations here: that the QEMU instance
-# can be killed asynchronusly by the watchdog timer, and that the
-# watchdog needs to be reset whenever a line gets properly read.
-def next_line()
+def next_line(id)
   # We need exclusive access to @line_thread as there is a race
   # between the watchdog thread killing the thread and this code
   # creating the thread.
-  @line_lock.lock
+  @line_lock[id].lock
 
   # If the subprocess has already been killed then we can't possibly
   # proceed, any test asking for output must be already failed
-  if (@qemu_out_pipe == nil)
-    @link_lock.unlock
+  if (@qemu_out_pipe[id] == nil)
+    @link_lock[id].unlock
     fail
   end
 
@@ -19,156 +15,157 @@ def next_line()
   # might want to kill the waiting request.  I'm shying away from
   # using non-blocking IO here with the hope that this will make
   # writing tests easier
-  @line = nil
-  @line_thread = Thread.new{
-    @line = @qemu_out_pipe.gets
+  @line[id] = nil
+  @line_thread[id] = Thread.new{
+    @line[id] = @qemu_out_pipe[id].gets
 
     # I'm considering the race here to be unimportant -- is there
     # really any difference between a watchdog that runs for N seconds
     # vs a watchdog that runs for N seconds minus a few instructions?
     # I think not.
-    @watchdog_set = true
+    @watchdog_set[id] = true
   }
 
   # Now that the thread has been started up there is no longer a race
   # condition
-  @line_lock.unlock
+  @line_lock[id].unlock
 
   # Wait for the thread to finish, implicitly using the ending
   # condition that "@line == nil" to indicate that the thread was
   # killed prematurely
-  @line_thread.join
-  @line_thread = nil
-  if (@line == nil)
+  @line_thread[id].join
+  @line_thread[id] = nil
+  if (@line[id] == nil)
     fail
   end
-  
-  return @line
+
+  return @line[id]
 end
 
 # Writes a single line to QEMU.  This just forces a flush after every
 # line -- while it's not particularly good for performance reasons, we
 # need it for interactivity.
-def write_line(line)
-  @qemu_in_pipe.puts(line)
-  @qemu_in_pipe.flush
+def write_line(line, id)
+  @qemu_in_pipe[id].puts(line)
+  @qemu_in_pipe[id].flush
 end
 
 # This fetches a single line from the kernel but ensures that it's not
 # been given a printk-looking message
-def next_line_noprintk()
-  while (/\[ *[0-9]*\.[0-9]*\] /.match(next_line()))
+def next_line_noprintk(id)
+  while (/\[ *[0-9]*\.[0-9]*\] /.match(next_line(id)))
   end
 
-  return @line
+  return @line[id]
 end
 
 # Kills the currently running QEMU instance in an entirely safe manner
 def kill_qemu()
   # We need a lock here to avoid the race between starting up the
   # thread that reads from QEMU and killing it.
-  @line_lock.lock
-  
+  @line_lock[id].lock
+
   # First, go ahead and kill the QEMU process we started earlier.
   # Also clean up the pipes that QEMU made
-  Process.kill('INT', @qemu_process.pid)
+  Process.kill('INT', @qemu_process[id].pid)
 
   # NOTE: it's very important we DON'T cleanup the sockets here, as
   # something else might still need access to them.  I should really
   # figure out Cucumber's pre and post hooks so we can clean things
   # up.
   #`./boot_qemu --cleanup`
-  
+
   # Killing this thread causes any outstanding read request.  This
   # will result in a test failure, but I can't just do it right now
   # because then this test will still block forever
-  if (@line_thread != nil)
-    @line_thread.kill
-    @line_thread = nil
+  if (@line_thread[id] != nil)
+    @line_thread[id].kill
+    @line_thread[id] = nil
   end
-  
+
   # Ensure nobody else attempts to communicate with the now defunct
   # QEMU process
-  @qemu_out_pipe = nil
-  @qemu_in_pipe = nil
-  @qemu_mout_pipe = nil
-  @qemu_min_pipe = nil
+  @qemu_out_pipe[id] = nil
+  @qemu_in_pipe[id] = nil
+  @qemu_mout_pipe[id] = nil
+  @qemu_min_pipe[id] = nil
   running = false
-  
+
   # This critical section could probably be shrunk, but we're just
   # killing everything so I've err'd a bit on the safe side here.
-  @line_lock.unlock
+  @line_lock[id].unlock
 
   # Informs the file waiting code that it should stop trying to wait
-  @qemu_running = false
+  @qemu_running[id] = false
 end
 
 # This waits for a file before opening it.  I can't figure out why I
 # can't call this "File.wait_open()", which is what I think it should
 # be called...
-def file_wait_open(filename, options)
-  while (!File.exists?(filename) && @qemu_running)
+def file_wait_open(filename, options, id)
+  while (!File.exists?(filename) && @qemu_running[id])
     STDERR.puts "Waiting on #{filename}"
     sleep(1)
   end
-  
+
   return File.open(filename, options)
 end
 
-Given /^Linux is booted with "(.*?)"$/ do |boot_args|
+def boot_linux(boot_args, id=0)
   # This lock ensures we aren't brining down the VM while also trying
   # to read a line from stdout -- this will cause the read to block
   # forever
-  @line_lock = Mutex.new
+  @line_lock[id] = Mutex.new
 
   # Start up QEMU in the background, note the implicit "--pipe"
   # argument that gets added here that causes QEMU to redirect
-  `./boot_qemu --cleanup`
-  @qemu_process = IO.popen("./boot_qemu --pipe #{boot_args}", "r")
-  @qemu_running = true
+  puts "./boot_qemu --pipe#{id} #{boot_args}"
+  exit(0)
+  @qemu_process[id] = IO.popen("./boot_qemu --pipe#{id} #{boot_args}", "r")
+  @qemu_running[id] = true
 
   # This ensures that QEMU hasn't terminated without us knowing about
   # it, which would cause the tests to hang on reading.
-  @qemu_watcher = Thread.new{
-    puts @qemu_process.readlines
-    kill_qemu()
+  @qemu_watcher[id] = Thread.new{
+    puts @qemu_process[id].readlines
+    kill_qemu(id)
   }
 
   # FIXME: Wait for a second so the FIFO pipes get created, this
   # should probably poll or something, but I'm lazy
   sleep(1)
-  @qemu_in_pipe = file_wait_open("qemu_serial_pipe.in", "w+")
-  @qemu_out_pipe = file_wait_open("qemu_serial_pipe.out", "r+")
-  @qemu_min_pipe = file_wait_open("qemu_monitor_pipe.in", "w+")
-  @qemu_mout_pipe = file_wait_open("qemu_monitor_pipe.out", "r+")
+  @qemu_in_pipe[id] = file_wait_open("qemu_serial_pipe#{id}.in", "w+", id)
+  @qemu_out_pipe[id] = file_wait_open("qemu_serial_pipe#{id}.out", "r+", id)
+  @qemu_min_pipe[id] = file_wait_open("qemu_monitor_pipe#{id}.in", "w+", id)
+  @qemu_mout_pipe[id] = file_wait_open("qemu_monitor_pipe#{id}.out", "r+", id)
 
   # Skip QEMU's help message
-  @monitor_thread_read = false
-  @monitor_thread = Thread.new{
-    @qemu_mout_pipe.gets
-    @monitor_thread_read = true
+  @monitor_thread_read[id] = false
+  @monitor_thread[id] = Thread.new{
+    @qemu_mout_pipe[id].gets
+    @monitor_thread_read[id] = true
   }
 
   # Start up a watchdog timer, this ensures that the Linux system
   # doesn't just hang.  This has the side effect of killing the
   # instance whenever it doesn't produce output for a while, but I
   # guess that's OK...
-  @watchdog_set = false
-  @watchdog_thread = Thread.new{
+  @watchdog_set[id] = false
+  @watchdog_thread[id] = Thread.new{
     running = true
     while (running)
       # Tune this interval based on how often messages must come in.
       sleep(10)
-      
+
       # If no messages have come in between this check and the last
       # check then go ahead and kill QEMU -- it must be hung
-      if (@watchdog_set == false)
-        kill_qemu()
+      if (@watchdog_set[id] == false)
+        kill_qemu(id)
       end
-      
+
       # Clear the watchdog, it'll have to get set again before another
       # timer round expires otherwise we'll end up killing QEMU!
-      @watchdog_set = false
+      @watchdog_set[id] = false
     end
   }
 
@@ -181,44 +178,82 @@ Given /^Linux is booted with "(.*?)"$/ do |boot_args|
   panic_regex = /^\[ *[0-9]*\.[0-9]*\] Kernel panic - not syncing/
   running = true
   while (running)
-    next_line()
+    next_line(id)
 
-    if (init_regex.match(@line))
+    if (init_regex.match(@line[id]))
       running = false
-    elsif (panic_regex.match(@line))
-      STDERR.puts("kernel panic during init: #{@line}")
+    elsif (panic_regex.match(@line[id]))
+      STDERR.puts("kernel panic during init: #{@line[id]}")
       running = false
     end
   end
 
   # Ensure the monitor thread has actually gotten a line from the QEMU
   # monitor -- otherwise we'll be all out of sync later...
-  if (@monitor_thread_read == false)
+  if (@monitor_thread_read[id] == false)
     fail
   end
 end
 
-Then /^the extra version should be "(.*?)"$/ do |extra_version|
-  # We just need to read the output, this special init already prints
-  # out the version information
-  line = next_line_noprintk()
-
-  # We can finally test the actual version here.
-  if !(/Linux \(none\) [0-9]*\.[0-9]*\.[0-9]*#{extra_version}/.match(line))
-    fail
-  end
-end
-
-Then /^Linux should shut down cleanly$/ do
+def kill_linux(id=0)
   # Look for Linux's power-off message
-  while !(/\[ *[0-9]*\.[0-9]*\] Power down\./.match(next_line()))
-    STDERR.puts(@line)
+  while !(/\[ *[0-9]*\.[0-9]*\] Power down\./.match(next_line(id)))
+    STDERR.puts(@line[id])
     # A clean shutdown means that the code can't kernel panic.
-    if (/^\[.*\] Kernel panic/.match(@line))
+    if (/^\[.*\] Kernel panic/.match(@line[id]))
       fail
     end
   end
+end
 
+def qemu_cleanup()
   # Clean up after any potential left over QEMU cruft
   `./boot_qemu --cleanup`
 end
+
+def initialize()
+  @line_lock = []
+  @qemu_out_pipe = []
+  @qemu_in_pipe = []
+  @qemu_mout_pipe = []
+  @qemu_min_pipe = []
+  @line_thread = []
+  @qemu_process = []
+
+  @monitor_thread_read = []
+  @monitor_thread = []
+
+  @qemu_running = []
+  @qemu_watcher = []
+  @watchdog_set = []
+  @watchdog_thread = []
+
+  @line = []
+  @link_lock = []
+end
+
+Given /^Initialized tests$/ do
+  initialize
+end
+
+Given /^Linux is booted with "(.*?)"$/ do |boot_args|
+  boot_linux(boot_args)
+end
+
+And /^Linux2 is booted with "(.*?)"$/ do |boot_args|
+  boot_linux(boot_args,1)
+end
+
+Then /^Linux should shut down cleanly$/ do
+  kill_linux()
+end
+
+Then /^Linux2 should shut down cleanly$/ do
+  kill_linux(1)
+end
+
+And /^Cleanup Qemu cruft$/ do
+  qemu_cleanup
+end
+#initialize
+#boot_linux("--net ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A --stdio")

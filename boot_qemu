@@ -7,8 +7,9 @@ monitor=""
 debug=""
 kvm=""
 memory="-m 512"
-net1="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A -net user -net socket,listen=localhost:1234"
-net2="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0B -net socket,connect=localhost:1234 "
+card="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A "
+net1="-net user -net socket,listen=localhost:1234"
+net2="-net socket,connect=localhost:1234 "
 
 #net1="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0A -net socket,mcast=230.0.0.1:1234"
 #net2="-net nic,model=ne2k_pci,macaddr=0A:0A:0A:0A:0A:0B -net socket,mcast=230.0.0.1:1234 "
@@ -27,6 +28,30 @@ do
 				serial="--serial pipe:qemu_serial_pipe"
 				monitor="--monitor pipe:qemu_monitor_pipe"
 				append="--append console=ttyS0"
+    elif [[ "$1" == "--pipe0" ]]
+    then
+				rm -f qemu_serial_pipe0.* qemu_monitor_pipe0.*
+				mkfifo qemu_serial_pipe0.in
+				mkfifo qemu_serial_pipe0.out
+				mkfifo qemu_monitor_pipe0.in
+				mkfifo qemu_monitor_pipe0.out
+				serial="--serial pipe:qemu_serial_pipe0"
+				monitor="--monitor pipe:qemu_monitor_pipe0"
+				append="--append console=ttyS0"
+		elif [[ "$1" == "--pipe1" ]]
+		then
+				rm -f qemu_serial_pipe1.* qemu_monitor_pipe1.*
+				mkfifo qemu_serial_pipe1.in
+				mkfifo qemu_serial_pipe1.out
+				mkfifo qemu_monitor_pipe1.in
+				mkfifo qemu_monitor_pipe1.out
+				serial="--serial pipe:qemu_serial_pipe1"
+				monitor="--monitor pipe:qemu_monitor_pipe1"
+				append="--append console=ttyS0"
+		elif [[ "$1" == "--net" ]]
+    then
+				card="-net nic,model=$2"
+				shift
 	  elif [[ "$1" == "--node2" ]]
 		then
 				net1=$net2
@@ -47,6 +72,16 @@ do
 				rm -f qemu_serial_pipe.out
 				rm -f qemu_monitor_pipe.in
 				rm -f qemu_monitor_pipe.out
+
+				rm -f qemu_serial_pipe0.in
+				rm -f qemu_serial_pipe0.out
+				rm -f qemu_monitor_pipe0.in
+				rm -f qemu_monitor_pipe0.out
+
+				rm -f qemu_serial_pipe1.in
+				rm -f qemu_serial_pipe1.out
+				rm -f qemu_monitor_pipe1.in
+				rm -f qemu_monitor_pipe1.out
 				exit 0
     elif [[ "$1" == "--debug" ]]
     then
@@ -83,4 +118,4 @@ done
 
 ./qemu/build/x86_64-softmmu/qemu-system-x86_64 \
     --kernel linux/arch/x86/boot/bzImage \
-    $initrd $append $serial $monitor $debug $kvm $memory $net1 $smp
+    $initrd $append $serial $monitor $debug $kvm $memory $card $net1 $smp

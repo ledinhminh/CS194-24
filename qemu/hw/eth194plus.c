@@ -198,6 +198,10 @@ uint32_t eth194plus_chain_for_mac(ETH194PlusState* s, uint8_t* src) {
         // printf("ETH194+: pointer to next table at index 0x%x appears to be 0x%08x\n", src[i], tbl_addr);
     }
     
+    printf("ETH194+: chain head at 0x%x\n", tbl_addr);
+    // tbl_addr is acually a eth194_chain_head*, so we read the first member of it.
+    cpu_physical_memory_read(tbl_addr, &tbl_addr, sizeof(uint32_t));
+    
     printf("ETH194+: Have special buffer chain at 0x%x\n", tbl_addr);
     return tbl_addr;
 }

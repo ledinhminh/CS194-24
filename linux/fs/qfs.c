@@ -45,6 +45,70 @@ struct qrpc_frame {
 
 // Here starts the actual implementation of QFS.
 
+static int qfs_readdir(struct file *file, void * dirent, filldir_t filldir) {
+    printk("QFS READDIR\n");
+    return 0;
+
+}
+
+// INODE OPERATIONS
+static int qfs_create(struct inode *inode, struct dentry *dentry, umode_t mode, bool boolean){
+    printk("QFS INODE CREATE\n");
+    return 0;
+}
+
+static struct dentry* qfs_lookup(struct inode *inode, struct dentry *dentry, unsigned int flags){
+    printk("QFS INODE LOOKUP\n");
+    return NULL;
+}
+
+static int qfs_link(struct dentry *old_dentry, struct inode *indoe, struct dentry *dentry){
+    printk("QFS INODE LINK\n");
+    return 0;
+}
+
+static int qfs_unlink(struct inode *dir, struct dentry *dentry){
+    printk("QFS INDOE UNLINK\n");
+    return 0;
+}
+
+static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname){
+    printk("QFS INODE SYMLINK\n");
+    return 0;
+}
+
+static int qfs_mkdir(struct inode *dir, struct dentry *dentry, int mode){
+    printk("QFS INODE MKDIR\n");
+    return 0;
+}
+
+static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
+    printk("QFS INODE RMDIR\n");
+    return 0;
+}
+
+static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry){
+    printk("QFS INODE RENAME\n");
+    return 0;
+}
+
+static int qfs_permission(struct inode *inode, int mask){
+    printk("QFS INDOE PERMISSION\n");
+    return 0;
+}
+
+static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat){
+    //invoked by VFS when it notices an inode needs to be refreshed from disk
+    printk("QFS INODE GETATTR\n");
+    return 0;
+}
+
+static int qfs_setattr(struct dentry *dentry, struct iattr *attr){
+    //caled from notify_change() to notify a 'change event' after an inode has been modified
+    printk("QFS INODE SETATTR\n");
+    return 0;
+}
+
 // FIXME: You'll want a whole bunch of these, every field needs to be
 // filled in (though some can use generic functionality).
 static int qfs_statfs(struct dentry *dentry, struct kstatfs *buf)
@@ -79,23 +143,23 @@ const struct dentry_operations qfs_dentry_operations = {
 const struct file_operations qfs_file_operations = {
     .open    = NULL,
     .release = NULL,
-    .readdir = NULL,
+    .readdir = qfs_readdir,
     .lock    = NULL,
     .llseek  = NULL,
 };
 
 const struct inode_operations qfs_inode_operations = {
-    .create     = NULL,
-    .lookup     = NULL,
-    .link       = NULL,
-    .unlink     = NULL,
-    .symlink    = NULL,
-    .mkdir      = NULL,
-    .rmdir      = NULL,
-    .rename     = NULL,
-    .permission = NULL,
-    .getattr    = NULL,
-    .setattr    = NULL,
+    .create     = qfs_create,
+    .lookup     = qfs_lookup,
+    .link       = qfs_link,
+    .unlink     = qfs_unlink,
+    .symlink    = qfs_symlink,
+    .mkdir      = qfs_mkdir,
+    .rmdir      = qfs_rmdir,
+    .rename     = qfs_rename,
+    .permission = qfs_permission,
+    .getattr    = qfs_getattr,
+    .setattr    = qfs_setattr,
 };
 
 // An extra structure we can tag into the superblock, currently not

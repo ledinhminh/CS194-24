@@ -140,12 +140,27 @@ const struct dentry_operations qfs_dentry_operations = {
 };
 
 
-const struct file_operations qfs_file_operations = {
+const struct file_operations qfs_dir_operations = {
     .open    = NULL,
     .release = NULL,
     .readdir = qfs_readdir,
     .lock    = NULL,
     .llseek  = NULL,
+};
+
+const struct file_operations qfs_file_operations = {
+    .open        = NULL,
+    .release     = NULL,
+    .llseek      = NULL,
+    .read        = NULL,
+    .write       = NULL,
+    .aio_read    = generic_file_aio_read,
+    .aio_write   = generic_file_aio_write,
+    .mmap        = generic_file_readonly_mmap,
+    .splice_read = generic_file_splice_read,
+    .fsync       = NULL,
+    .lock        = NULL,
+    .flock       = NULL,
 };
 
 const struct inode_operations qfs_inode_operations = {
@@ -225,7 +240,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
     inode = iget_locked(sb, 1);
     inode->i_mode = S_IFDIR;
     inode->i_op   = &qfs_inode_operations;
-    inode->i_fop  = &qfs_file_operations;
+    inode->i_fop  = &qfs_dir_operations;
     unlock_new_inode(inode);
 
     sb->s_root = d_make_root(inode);

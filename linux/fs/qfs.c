@@ -61,9 +61,10 @@ struct qfs_inode head;
 
 // SUPER OPERATIONS
 static void qfs_inode_init(void* _inode) {
-    printk(KERN_INFO, "qfs_inode_init: initing an qfs_inode...\n");
-    struct qfs_inode* inode = _inode;
-    
+    struct qfs_inode* inode;
+    printk(KERN_INFO "qfs_inode_init: initing an qfs_inode...\n");
+
+    inode = _inode;
     memset(inode, 0, sizeof(*inode));
     inode_init_once(&inode->inode);
     spin_lock_init(&inode->lock);
@@ -71,9 +72,9 @@ static void qfs_inode_init(void* _inode) {
 }
 
 static struct inode* qfs_alloc_inode(struct super_block *sb) {
-    printk("QFS SUPER ALLOC_INODE\n");
-    
     struct qfs_inode *inode;
+
+    printk("QFS SUPER ALLOC_INODE\n");
     inode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
     
     if (!inode) {
@@ -88,31 +89,26 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
     return &inode->inode;
 }
 
-static void qfs_drop_inode(struct inode *inode){
-    printk("QFS SUPER DROP INODE\n");
-    return 0;
-}
-
-// FILE OPERATIONS
-static int qfs_readdir(struct file *file, void * dirent, filldir_t filldir) {
-    printk("QFS READDIR\n");
-    return 0;
-}
+// drop_inode doesn't seem to be used???
+// static void qfs_drop_inode(struct inode *inode){
+//     printk("QFS SUPER DROP INODE\n");
+//     return;
+// }
 
 // DENTRY OPERATIONS
-static int qfs_revalidate(struct dentry *dentry, struct nameidata *idata){
+static int qfs_revalidate(struct dentry *dentry, unsigned int flags){
     printk("QFS DENTRY REVALIDATE\n");
     return 0;
 }
 
-static int qfs_delete(struct dentry *dentry){
+static int qfs_delete(const struct dentry *dentry){
     printk("QFS DENTRY DELETE\n");
     return 0;
 }
 
-static int qfs_release(struct dentry *dentry){
+static void qfs_release(struct dentry *dentry){
     printk("QFS DENTRY RELEASE\n");
-    return 0;
+    return;
 }
 
 static void qfs_destroy_inode(struct inode *inode){
@@ -163,6 +159,57 @@ static int qfs_dir_lock(struct file *file, int cmd, struct file_lock *lock){
 static loff_t qfs_dir_llseek(struct file *file, loff_t offset, int origin){
 	//updates file pointer to the given offset. called via llseek() system call.
 	printk("QFS DIR LLSEEK\n");
+	return 0;
+}
+
+//FILE FILE OPERATIONS
+static int qfs_file_open(struct inode *inode, struct file *file){
+	//creates a new file object and links it to the corresponding indoe object.
+	printk("QFS FILE OPEN\n");
+	return 0;
+}
+
+static int qfs_file_release(struct inode *inode, struct file *file){
+	//called when last remaining reference to file is destroyed
+	printk("QFS FILE RELEASE\n");
+	return 0;
+}
+
+static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){
+	//updates file pointer to the given offset. called via llseek() system call.
+	printk("QFS FILE LLSEEK\n");
+	return 0;
+}
+
+static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset){
+	//reads count bytes from the given file at position offset into buf.
+	//file pointer is then updated
+	printk("QFS FILE READ\n");
+	return 0;
+}
+
+static ssize_t qfs_file_write(struct file *file, const char __user *buf, size_t count, loff_t *offset){
+	//writes count bytes from buf into the given file at position offset.
+	//file pointer is then updated
+	printk("QFS FILE WRITE\n");
+	return 0;
+}
+
+static int qfs_file_fsync(struct file *file, loff_t start, loff_t end, int datasync){
+	//write all cached data for file to disk
+	printk("QFS FILE FSYNC\n");
+	return 0;
+}
+
+static int qfs_file_lock(struct file *file, int cmd, struct file_lock *lock){
+	//manipulates a file lock on the given file
+	printk("QFS FILE LOCK\n");
+	return 0;
+}
+
+static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
+	//advisory locking
+	printk("QFS FILE FLOCK\n");
 	return 0;
 }
 
@@ -263,18 +310,18 @@ const struct file_operations qfs_dir_operations = {
 };
 
 const struct file_operations qfs_file_operations = {
-	.open        = NULL,
-	.release     = NULL,
-	.llseek      = NULL,
-	.read        = NULL,
-	.write       = NULL,
+	.open        = qfs_file_open,
+	.release     = qfs_file_release,
+	.llseek      = qfs_file_llseek,
+	.read        = qfs_file_read,
+	.write       = qfs_file_write,
 	.aio_read    = generic_file_aio_read,
 	.aio_write   = generic_file_aio_write,
 	.mmap        = generic_file_readonly_mmap,
 	.splice_read = generic_file_splice_read,
-	.fsync       = NULL,
-	.lock        = NULL,
-	.flock       = NULL,
+	.fsync       = qfs_file_fsync,
+	.lock        = qfs_file_lock,
+	.flock       = qfs_file_flock,
 };
 
 

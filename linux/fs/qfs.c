@@ -45,12 +45,33 @@ struct qrpc_frame {
 
 // Here starts the actual implementation of QFS.
 
+// FILE OPERATIONS
 static int qfs_readdir(struct file *file, void * dirent, filldir_t filldir) {
     printk("QFS READDIR\n");
     return 0;
 
 }
 
+// DENTRY OPERATIONS
+static int qfs_revalidate(struct dentry *dentry, struct nameidata *idata){
+    printk("QFS DENTRY REVALIDATE\n");
+    return 0;
+}
+
+static int qfs_delete(struct dentry *dentry){
+    printk("QFS DENTRY DELETE\n");
+    return 0;
+}
+
+static int qfs_release(struct dentry *dentry){
+    printk("QFS DENTRY RELEASE\n");
+    return 0;
+}
+
+static struct vfsmount* qfs_automount(struct path *path){
+    printk("QFS DENTRY AUTOMOUNT\n");
+    return NULL;
+}
 // INODE OPERATIONS
 static int qfs_create(struct inode *inode, struct dentry *dentry, umode_t mode, bool boolean){
     printk("QFS INODE CREATE\n");
@@ -133,34 +154,19 @@ static const struct super_operations qfs_super_ops = {
 };
 
 const struct dentry_operations qfs_dentry_operations = {
-    .d_revalidate = NULL,
-    .d_delete	  = NULL,
-    .d_release	  = NULL,
-    .d_automount  = NULL,
+    .d_revalidate = qfs_revalidate,
+    .d_delete	  = qfs_delete,
+    .d_release	  = qfs_release,
+    .d_automount  = qfs_automount,
 };
 
 
-const struct file_operations qfs_dir_operations = {
+const struct file_operations qfs_file_operations = {
     .open    = NULL,
     .release = NULL,
     .readdir = qfs_readdir,
     .lock    = NULL,
     .llseek  = NULL,
-};
-
-const struct file_operations qfs_file_operations = {
-    .open        = NULL,
-    .release     = NULL,
-    .llseek      = NULL,
-    .read        = NULL,
-    .write       = NULL,
-    .aio_read    = generic_file_aio_read,
-    .aio_write   = generic_file_aio_write,
-    .mmap        = generic_file_readonly_mmap,
-    .splice_read = generic_file_splice_read,
-    .fsync       = NULL,
-    .lock        = NULL,
-    .flock       = NULL,
 };
 
 const struct inode_operations qfs_inode_operations = {
@@ -240,7 +246,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
     inode = iget_locked(sb, 1);
     inode->i_mode = S_IFDIR;
     inode->i_op   = &qfs_inode_operations;
-    inode->i_fop  = &qfs_dir_operations;
+    inode->i_fop  = &qfs_file_operations;
     unlock_new_inode(inode);
 
     sb->s_root = d_make_root(inode);

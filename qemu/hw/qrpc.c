@@ -57,10 +57,14 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         break;
     case QRPC_CMD_MOUNT:
         fprintf(stderr, "QFS mounted by Linux %s\n", s->path);
-
-        //just printing out the files, is all
-        DIR *dir;
+        //return an ok
+        s->frame.ret = QRPC_RET_OK;
+        break;
+    case QRPC_CMD_OPENDIR:
+        {
         struct dirent *ent;
+        fprintf(stderr, "Size of a dirent=%i bytes\n", sizeof(struct dirent) );
+        DIR *dir;
         if ((dir = opendir(s->path)) != NULL){
             while ((ent = readdir(dir)) != NULL){
                 fprintf(stderr, "%s\n", ent->d_name);
@@ -70,9 +74,10 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
             fprintf(stderr, "Couldn't open %s\n", s->path);
         }
 
-        //return an ok
+        //return and ok
         s->frame.ret = QRPC_RET_OK;
         break;
+    }
     default:
         // Silently drop all unknown commands
         break;

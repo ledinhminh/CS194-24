@@ -23,6 +23,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_INIT   0
 #define QRPC_CMD_MOUNT  1
 #define QRPC_CMD_UMOUNT 2
+#define QRPC_CMD_OPENDIR 3
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -61,8 +62,19 @@ LIST_HEAD(list);
 spinlock_t list_mutex;
 struct qfs_inode head;
 
-// SUPER OPERATIONS
 
+//because getting the block device SUCKS~!!!
+static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f){
+	struct block_device *bdev;
+
+	//from the inode, get the superblock, then the block dev
+	bdev = inode->i_sb->s_bdev;
+ 	f->cmd = cmd;
+	f->ret = QRPC_RET_ERR;
+	qrpc_transfer(bdev, f, sizeof(struct qrpc_frame));
+}
+
+// SUPER OPERATIONS
 static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
 }
@@ -234,8 +246,6 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     // This function searches a directory for an inode corresponding to a filename specified in the given dentry.
 
     struct qfs_inode* qdir;
-    int ret;
-
     printk(KERN_INFO "qfs_lookup: enter\n");
     printk("QFS INODE LOOKUP\n---dir: 0x%p\n---dentry: 0x%p\n------d_parent: 0x%p\n------d_name: %s\n---flags: %d\n",
            dir, dentry, dentry->d_parent, dentry->d_name.name, flags);
@@ -246,8 +256,6 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     qdir = qnode_of_inode(dir);
 
     printk(KERN_INFO "qfs_lookup: desired path is %s\n", dentry->d_name.name);
-
-    return NULL;
 
     return NULL;
 }
@@ -282,16 +290,21 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 	return 0;
 }
 
-static int qfs_permission(struct inode *inode, int mask){
-    printk("QFS INDOE PERMISSION\n---inode: 0x%p\n---mask: %d\n", inode, mask);
-    return 0;
-}
+// static int qfs_permission(struct inode *inode, int mask){
+//     printk("QFS INODE PERMISSION\n---inode: 0x%p\n---mask: %d\n", inode, mask);
+//     printk("-umode_t: %i\n", inode->i_mode);
+//     return 0;
+// }
 
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat){
     //invoked by VFS when it notices an inode needs to be refreshed from disk
+    struct qrpc_frame frame;
     printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
            mnt, dentry, stat);
-    // USED
+    printk("-inode name: %s\n", dentry->d_name.name);
+    printk("-inode addr: 0x%p\n", dentry->d_inode);
+
+    qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     return 0;
 }
 
@@ -365,7 +378,7 @@ const struct inode_operations qfs_inode_operations = {
 	.mkdir      = qfs_mkdir,
 	.rmdir      = qfs_rmdir,
 	.rename     = qfs_rename,
-	.permission = qfs_permission,
+	.permission = NULL, //we could use our qfs_permission... but theres a generic
 	.getattr    = qfs_getattr,
 	.setattr    = qfs_setattr,
 };
@@ -429,6 +442,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	sb->s_magic = ((int *)"QRFS")[0];
 	sb->s_op = &qfs_super_ops;
 	sb->s_d_op = &qfs_dentry_operations;
+	sb->s_bdev = bdev;
 
 	inode = iget_locked(sb, 1);
 	inode->i_mode = S_IFDIR;
@@ -436,6 +450,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	inode->i_fop  = &qfs_file_operations;
 	unlock_new_inode(inode);
 
+	//make a root dentry out of the inode
 	sb->s_root = d_make_root(inode);
 
 	f.cmd = QRPC_CMD_MOUNT;
@@ -443,6 +458,10 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	qrpc_transfer(bdev, &f, sizeof(f));
 	if (f.ret != QRPC_RET_OK)
 		panic("QRPC mount failed!");
+
+	//fill out inodes?
+	printk(KERN_INFO "ROOT INODE ADDR: 0x%p\n", inode);
+	printk(KERN_INFO "ROOT DENTRY ADDR: 0x%p\n", sb->s_root);
 
 	return dget(sb->s_root);
 }

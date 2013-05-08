@@ -56,10 +56,17 @@ struct qfs_inode {
     spinlock_t lock;
 };
 
+LIST_HEAD(list);
+
 spinlock_t list_mutex;
 struct qfs_inode head;
 
 // SUPER OPERATIONS
+
+static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
+    return container_of(inode, struct qfs_inode, inode);
+}
+
 static void qfs_inode_init(void* _inode) {
     struct qfs_inode* inode;
     printk(KERN_INFO "qfs_inode_init: initing an qfs_inode...\n");
@@ -68,16 +75,15 @@ static void qfs_inode_init(void* _inode) {
     memset(inode, 0, sizeof(*inode));
     inode_init_once(&inode->inode);
     spin_lock_init(&inode->lock);
-    INIT_LIST_HEAD(&inode->list);
 }
 
 static struct inode* qfs_alloc_inode(struct super_block *sb) {
-    struct qfs_inode *inode;
+    struct qfs_inode *qnode;
 
     printk("QFS SUPER ALLOC_INODE\n");
-    inode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
+    qnode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
     
-    if (!inode) {
+    if (!qnode) {
         printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
         return NULL;
     }
@@ -85,8 +91,10 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
     // Set some flags here.. I think
     
     // Add qfs_inode to list
+    printk(KERN_INFO "qfs_alloc_inode: adding inode to list\n");
+    list_add(&qnode->list, &list);
     
-    return &inode->inode;
+    return &qnode->inode;
 }
 
 // drop_inode doesn't seem to be used???
@@ -219,9 +227,22 @@ static int qfs_create(struct inode *inode, struct dentry *dentry, umode_t mode, 
 	return 0;
 }
 
-static struct dentry* qfs_lookup(struct inode *inode, struct dentry *dentry, unsigned int flags){
-	printk("QFS INODE LOOKUP\n");
-	return NULL;
+static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
+    // This function searches a directory for an inode corresponding to a filename specified in the given dentry.
+    
+    struct qfs_inode* qdir;
+    int ret;
+    
+    printk(KERN_INFO "qfs_lookup: enter\n");
+    
+    // We're supposed to fill out the dentry. Why is it associated already?
+    BUG_ON(dentry->d_inode != NULL);
+    
+    qdir = qnode_of_inode(dir);
+    
+    printk(KERN_INFO "qfs_lookup: desired path is %s\n", dentry->d_name.name);
+    
+    return NULL;
 }
 
 static int qfs_link(struct dentry *old_dentry, struct inode *indoe, struct dentry *dentry){
@@ -254,9 +275,12 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 	return 0;
 }
 
-static int qfs_permission(struct inode *inode, int mask){
-	printk("QFS INDOE PERMISSION\n");
-	return 0;
+static int qfs_permission(struct inode *inode, int mask) {
+    // I have no idea what this does
+    struct qfs_inode* qnode = qnode_of_inode(inode);
+    
+    printk(KERN_INFO "qfs_permission: i_ino=%lu\n", qnode->inode.i_ino);
+    return 0;
 }
 
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat){

@@ -45,47 +45,75 @@ struct qrpc_frame {
 
 // Here starts the actual implementation of QFS.
 
+// Guesswork here taken from http://en.wikipedia.org/wiki/Read-copy-update.
+
+static struct kmem_cache *qfs_inode_cachep;
+
+struct qfs_inode {
+    struct list_head list;
+    unsigned long backing_fd;
+    struct inode inode;
+    spinlock_t lock;
+};
+
+spinlock_t list_mutex;
+struct qfs_inode head;
 
 // SUPER OPERATIONS
-static struct inode* qfs_alloc_inode(struct super_block *sb){
-    printk("QFS SUPER ALLOC_INODE\n");
-    return NULL;
+
+static void qfs_inode_init(void* _inode) {
+    printk(KERN_INFO, "qfs_inode_init: initing an qfs_inode...\n");
+    struct qfs_inode* inode = _inode;
+    
+    memset(inode, 0, sizeof(*inode));
+    inode_init_once(&inode->inode);
+    spin_lock_init(&inode->lock);
+    INIT_LIST_HEAD(&inode->list);
 }
 
-static int qfs_drop_inode(struct inode *inode){
+static struct inode* qfs_alloc_inode(struct super_block *sb) {
+    printk("QFS SUPER ALLOC_INODE\n");
+    
+    struct qfs_inode *inode;
+    inode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
+    
+    if (!inode) {
+        printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
+        return NULL;
+    }
+    
+    // Set some flags here.. I think
+    
+    // Add qfs_inode to list
+    
+    return &inode->inode;
+}
+
+static void qfs_drop_inode(struct inode *inode){
     printk("QFS SUPER DROP INODE\n");
     return 0;
 }
 
-static void qfs_destroy_inode(struct inode *inode){
-    printk("QFS SUPER DESTROY INODE\n");
-    return;
-}
-
-static void qfs_evict_inode(struct inode *inode){
-    printk("QFS SUPER EVICT INODE\n");
-    return;
-}
-
-static int qfs_show_options(struct seq_file *file, struct dentry *dentry){
-    printk("QFS SUPER SHOW OPTIONS\n");
+// FILE OPERATIONS
+static int qfs_readdir(struct file *file, void * dirent, filldir_t filldir) {
+    printk("QFS READDIR\n");
     return 0;
 }
 
 // DENTRY OPERATIONS
-static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
+static int qfs_revalidate(struct dentry *dentry, struct nameidata *idata){
     printk("QFS DENTRY REVALIDATE\n");
     return 0;
 }
 
-static int qfs_delete(const struct dentry *dentry){
+static int qfs_delete(struct dentry *dentry){
     printk("QFS DENTRY DELETE\n");
     return 0;
 }
 
-static void qfs_release(struct dentry *dentry){
+static int qfs_release(struct dentry *dentry){
     printk("QFS DENTRY RELEASE\n");
-    return;
+    return 0;
 }
 
 static struct vfsmount* qfs_automount(struct path *path){
@@ -118,7 +146,7 @@ static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *sym
     return 0;
 }
 
-static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode){
+static int qfs_mkdir(struct inode *dir, struct dentry *dentry, int mode){
     printk("QFS INODE MKDIR\n");
     return 0;
 }
@@ -167,10 +195,10 @@ static int qfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static const struct super_operations qfs_super_ops = {
     .statfs        = qfs_statfs,
     .alloc_inode   = qfs_alloc_inode,
-    .drop_inode	   = qfs_drop_inode,
-    .destroy_inode = qfs_destroy_inode,
-    .evict_inode   = qfs_evict_inode,
-    .show_options  = qfs_show_options,
+    // .drop_inode	   = NULL,
+    .destroy_inode = NULL,
+    .evict_inode   = NULL,
+    .show_options  = NULL,
 };
 
 const struct dentry_operations qfs_dentry_operations = {
@@ -308,6 +336,12 @@ static struct file_system_type qfs_type =
 
 int __init qfs_init(void)
 {
+    // Allocate our kmem cache.
+    
+    // TODO: Need object ctors?
+    qfs_inode_cachep = kmem_cache_create("qfs_inode_cache", 
+        sizeof(struct qfs_inode), 0, SLAB_HWCACHE_ALIGN, qfs_inode_init);
+
     register_filesystem(&qfs_type);
     return 0;
 }

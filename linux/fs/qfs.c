@@ -45,11 +45,22 @@ struct qrpc_frame {
 
 // Here starts the actual implementation of QFS.
 
+
+// SUPER OPERATIONS
+static struct inode* qfs_alloc_inode(struct super_block *sb){
+    printk("QFS SUPER ALLOC_INODE\n");
+    return NULL;
+}
+
+static void qfs_drop_inode(struct inode *inode){
+    printk("QFS SUPER DROP INODE\n");
+    return 0;
+}
+
 // FILE OPERATIONS
 static int qfs_readdir(struct file *file, void * dirent, filldir_t filldir) {
     printk("QFS READDIR\n");
     return 0;
-
 }
 
 // DENTRY OPERATIONS
@@ -145,8 +156,8 @@ static int qfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 }
 
 static const struct super_operations qfs_super_ops = {
-    .statfs        = &qfs_statfs,
-    .alloc_inode   = NULL,
+    .statfs        = qfs_statfs,
+    .alloc_inode   = qfs_alloc_inode,
     .drop_inode	   = NULL,
     .destroy_inode = NULL,
     .evict_inode   = NULL,
@@ -186,17 +197,17 @@ const struct file_operations qfs_file_operations = {
 
 
 const struct inode_operations qfs_inode_operations = {
-    .create     = qfs_create,
-    .lookup     = qfs_lookup,
-    .link       = qfs_link,
-    .unlink     = qfs_unlink,
-    .symlink    = qfs_symlink,
-    .mkdir      = qfs_mkdir,
-    .rmdir      = qfs_rmdir,
-    .rename     = qfs_rename,
-    .permission = qfs_permission,
-    .getattr    = qfs_getattr,
-    .setattr    = qfs_setattr,
+    .create     = &qfs_create,
+    .lookup     = &qfs_lookup,
+    .link       = &qfs_link,
+    .unlink     = &qfs_unlink,
+    .symlink    = &qfs_symlink,
+    .mkdir      = &qfs_mkdir,
+    .rmdir      = &qfs_rmdir,
+    .rename     = &qfs_rename,
+    .permission = &qfs_permission,
+    .getattr    = &qfs_getattr,
+    .setattr    = &qfs_setattr,
 };
 
 // An extra structure we can tag into the superblock, currently not

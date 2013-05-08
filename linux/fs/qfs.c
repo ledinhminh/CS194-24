@@ -82,18 +82,18 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 
     printk("QFS SUPER ALLOC_INODE\n");
     qnode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
-    
+
     if (!qnode) {
         printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
         return NULL;
     }
-    
+
     // Set some flags here.. I think
-    
+
     // Add qfs_inode to list
     printk(KERN_INFO "qfs_alloc_inode: adding inode to list\n");
     list_add(&qnode->list, &list);
-    
+
     return &qnode->inode;
 }
 
@@ -110,12 +110,12 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags){
 }
 
 static int qfs_delete(const struct dentry *dentry){
-    printk("QFS DENTRY DELETE\n");
+    printk("QFS DENTRY DELETE\n---dentry: 0x%p\n", dentry);
     return 0;
 }
 
 static void qfs_release(struct dentry *dentry){
-    printk("QFS DENTRY RELEASE\n");
+    printk("QFS DENTRY RELEASE\n---dentry: 0x%p\n", dentry);
     return;
 }
 
@@ -223,25 +223,30 @@ static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 
 // INODE OPERATIONS
 static int qfs_create(struct inode *inode, struct dentry *dentry, umode_t mode, bool boolean){
-	printk("QFS INODE CREATE\n");
-	return 0;
+    printk("QFS INODE CREATE\n---inode: 0x%p\n---dentry0x%p\n---mode: %d\n boolean: %d\n",
+           inode, dentry, mode, boolean);
+    return 0;
 }
 
 static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
     // This function searches a directory for an inode corresponding to a filename specified in the given dentry.
-    
+
     struct qfs_inode* qdir;
     int ret;
-    
+
     printk(KERN_INFO "qfs_lookup: enter\n");
-    
+    printk("QFS INODE LOOKUP\n---dir: 0x%p\n---dentry: 0x%p\n------d_parent: 0x%p\n------d_name: %s\n---flags: %d\n",
+           dir, dentry, dentry->d_parent, dentry->d_name.name, flags);
+
     // We're supposed to fill out the dentry. Why is it associated already?
     BUG_ON(dentry->d_inode != NULL);
-    
+
     qdir = qnode_of_inode(dir);
-    
+
     printk(KERN_INFO "qfs_lookup: desired path is %s\n", dentry->d_name.name);
-    
+
+    return NULL;
+
     return NULL;
 }
 
@@ -275,18 +280,17 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 	return 0;
 }
 
-static int qfs_permission(struct inode *inode, int mask) {
-    // I have no idea what this does
-    struct qfs_inode* qnode = qnode_of_inode(inode);
-    
-    printk(KERN_INFO "qfs_permission: i_ino=%lu\n", qnode->inode.i_ino);
+static int qfs_permission(struct inode *inode, int mask){
+    printk("QFS INDOE PERMISSION\n---inode: 0x%p\n---mask: %d\n", inode, mask);
     return 0;
 }
 
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat){
-	//invoked by VFS when it notices an inode needs to be refreshed from disk
-	printk("QFS INODE GETATTR\n");
-	return 0;
+    //invoked by VFS when it notices an inode needs to be refreshed from disk
+    printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
+           mnt, dentry, stat);
+    // USED
+    return 0;
 }
 
 static int qfs_setattr(struct dentry *dentry, struct iattr *attr){
@@ -454,9 +458,9 @@ static struct file_system_type qfs_type =
 int __init qfs_init(void)
 {
     // Allocate our kmem cache.
-    
+
     // TODO: Need object ctors?
-    qfs_inode_cachep = kmem_cache_create("qfs_inode_cache", 
+    qfs_inode_cachep = kmem_cache_create("qfs_inode_cache",
         sizeof(struct qfs_inode), 0, SLAB_HWCACHE_ALIGN, qfs_inode_init);
 
     register_filesystem(&qfs_type);

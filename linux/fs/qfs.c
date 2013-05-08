@@ -160,14 +160,30 @@ const struct dentry_operations qfs_dentry_operations = {
     .d_automount  = qfs_automount,
 };
 
-
-const struct file_operations qfs_file_operations = {
+const struct file_operations qfs_dir_operations = {
     .open    = NULL,
     .release = NULL,
-    .readdir = qfs_readdir,
+    .readdir = NULL,
     .lock    = NULL,
     .llseek  = NULL,
 };
+
+const struct file_operations qfs_file_operations = {
+    .open        = NULL,
+    .release     = NULL,
+    .llseek      = NULL,
+    .read        = NULL,
+    .write       = NULL,
+    .aio_read    = generic_file_aio_read,
+    .aio_write   = generic_file_aio_write,
+    .mmap        = generic_file_readonly_mmap,
+    .splice_read = generic_file_splice_read,
+    .fsync       = NULL,
+    .lock        = NULL,
+    .flock       = NULL,
+};
+
+
 
 const struct inode_operations qfs_inode_operations = {
     .create     = qfs_create,

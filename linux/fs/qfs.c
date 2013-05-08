@@ -67,6 +67,9 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
 }
 
+
+//for the kmemcache which is a slab allocator. So it'll make a bunch of
+//these at the start
 static void qfs_inode_init(void* _inode) {
     struct qfs_inode* inode;
     printk(KERN_INFO "qfs_inode_init: initing an qfs_inode...\n");
@@ -80,9 +83,8 @@ static void qfs_inode_init(void* _inode) {
 static struct inode* qfs_alloc_inode(struct super_block *sb) {
     struct qfs_inode *qnode;
 
-    printk("QFS SUPER ALLOC_INODE\n");
+    printk("QFS SUPER ALLOC_INODE START\n");
     qnode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
-
     if (!qnode) {
         printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
         return NULL;
@@ -319,7 +321,7 @@ static const struct super_operations qfs_super_ops = {
     // .drop_inode	   = NULL,
 	.destroy_inode = qfs_destroy_inode,
 	.evict_inode   = qfs_evict_inode,
-	.show_options  = qfs_show_options,
+	.show_options  = qfs_show_options, //maybe generic_show_options is good enough?
 };
 
 const struct dentry_operations qfs_dentry_operations = {

@@ -2,6 +2,7 @@
 #include "pci/pci.h"
 #include "qrpc.h"
 #include "loader.h"
+#include "dirent.h"
 
 #define DEBUG_PORTS 0
 
@@ -55,7 +56,21 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         s->frame.ret = QRPC_RET_OK;
         break;
     case QRPC_CMD_MOUNT:
-        fprintf(stderr, "QFS mounted by Linux\n");
+        fprintf(stderr, "QFS mounted by Linux %s\n", s->path);
+
+        //just printing out the files, is all
+        DIR *dir;
+        struct dirent *ent;
+        if ((dir = opendir(s->path)) != NULL){
+            while ((ent = readdir(dir)) != NULL){
+                fprintf(stderr, "%s\n", ent->d_name);
+            }
+            closedir(dir);
+        }else {
+            fprintf(stderr, "Couldn't open %s\n", s->path);
+        }
+
+        //return an ok
         s->frame.ret = QRPC_RET_OK;
         break;
     default:

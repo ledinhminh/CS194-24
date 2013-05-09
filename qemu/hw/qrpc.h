@@ -5,14 +5,24 @@
 #define QRPC_CMD_MOUNT  1
 #define QRPC_CMD_UMOUNT 2
 #define QRPC_CMD_OPENDIR 3
+#define QRPC_CMD_CREATE 4
+#define QRPC_CMD_CONTINUE 9
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
-#define QRPC_CMD_UMOUNT 2
-#define QRPC_CMD_OPENDIR 3
-#define QRPC_CMD_CREATE 4
+#define QRPC_RET_CONTINUE 2
 
 #define QRPC_DATA_SIZE 1024
+#define QRPC_BUFFER_LEN 256
+
+
+struct qrpc_file_info {
+    char name[256];
+    int name_len;
+    char type;
+    mode_t mode;
+} __attribute__((packed));
+
 
 // Holds a single frame of IO
 typedef struct QRPCFrame {
@@ -44,6 +54,10 @@ typedef struct QRPCState {
 
     // Stores the current RPC data frame.
     QRPCFrame frame;
+
+    QRPCFrame buffer[QRPC_BUFFER_LEN];
+    int buf_size;
+    int buf_read;
 } QRPCState;
 
 #endif

@@ -6,6 +6,14 @@
 
 #define DEBUG_PORTS 0
 
+
+//takes care of maintenance stuff
+static void add_frame_to_buf(QRPCState *s, QRPCFrame *frame){
+    memcpy(s->buffer + s->buf_size, frame, sizeof(QRPCFrame));
+    s->buf_size += 1;
+    return;
+}
+
 static uint64_t qrpc_read(void *v, hwaddr a, unsigned w)
 {
     QRPCState *s = v;
@@ -49,6 +57,16 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     if (a != 0)
         return;
 
+    //ONLY COMMANDS GET TO THIS POINT
+    if (d != QRPC_CMD_CONTINUE){
+        //initialize the list
+        //there shouldn't be any frames that haven't been read out anyway
+        fprintf(stderr, "clearing out buffer...\n");
+        s->buf_size = 0;
+        s->buf_read = 0;
+        memset(s->buffer, 0, sizeof(QRPCFrame) * QRPC_BUFFER_LEN);
+    }
+
     switch (d)
     {
     case QRPC_CMD_INIT:
@@ -61,21 +79,87 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         s->frame.ret = QRPC_RET_OK;
         break;
     case QRPC_CMD_OPENDIR:
-        {
+    {
         struct dirent *ent;
-        fprintf(stderr, "Size of a dirent=%i bytes\n", sizeof(struct dirent) );
+        struct stat st;
         DIR *dir;
+        int ret;
         if ((dir = opendir(s->path)) != NULL){
             while ((ent = readdir(dir)) != NULL){
-                fprintf(stderr, "%s\n", ent->d_name);
+                int size = strlen(s->path) + strlen(ent->d_name);
+                char full_path[size+1];
+                struct qrpc_file_info finfo;
+
+                sprintf(full_path, "%s/%s", s->path, ent->d_name);
+                ret = stat(full_path, &st);
+
+                //if we can't stat the file, we probably shouldn't keep going
+                if (ret == -1)
+                    continue;
+                // lots of printing
+                // fprintf(stderr, "file: %s \n", full_path);
+                // switch(ent->d_type){
+                //     case DT_UNKNOWN:
+                //         fprintf(stderr, "\ntype: unkown\n");
+                //         break;
+                //     case DT_REG:
+                //         fprintf(stderr, "\ttype: regular\n");
+                //         break;
+                //     case DT_DIR:
+                //         fprintf(stderr, "\ttype: directory\n");
+                //         break;
+                //     case DT_FIFO:
+                //         fprintf(stderr, "\ttype: fifo\n");
+                //         break;
+                //     case DT_SOCK:
+                //         fprintf(stderr, "\ttype: socket\n");
+                //         break;
+                //     case DT_CHR:
+                //         fprintf(stderr, "\ttype: character device\n");
+                //         break;
+                //     default:
+                //         break;
+                // }
+                // if(ret == -1){
+                //     fprintf(stderr, "\tcouldn't stat\n");
+                // } else {
+                //     fprintf(stderr, "\tmode_t:%lu\n", st.st_mode);
+                // }
+
+                finfo.name_len = sprintf(&finfo.name, "%s", ent->d_name);
+                finfo.type = ent->d_type;
+                finfo.mode = st.st_mode;
+                // fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
+                // fprintf(stderr, "name: %s\n", finfo.name);
+                memcpy(&(s->frame.data), &finfo, sizeof(struct qrpc_file_info));
+
+                QRPCFrame frame;
+                memset(&frame, 0, sizeof(QRPCFrame));
+                memcpy(&(frame.data), &finfo, sizeof(struct qrpc_file_info));
+                frame.ret = QRPC_RET_CONTINUE;
+
+                add_frame_to_buf(s, &frame);
             }
             closedir(dir);
         }else {
             fprintf(stderr, "Couldn't open %s\n", s->path);
         }
 
-        //return and ok
+        //return an ok
         s->frame.ret = QRPC_RET_OK;
+
+        //set the last frame buffer to OK
+        s->buffer[s->buf_size].ret = QRPC_RET_OK;
+        //just gonna print out the buffer
+        // int i;
+        // struct QRPCFrame frame;
+        // struct qrpc_file_info finfo;
+        // memset(&finfo, 0, sizeof(struct qrpc_file_info));
+        // for (i = 0; i < s->buf_size; i++){
+        //     frame = (s->buffer)[i];
+        //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info)); 
+        //     fprintf(stderr, "%s\n", finfo.name);
+        // }
         break;
         }
     case QRPC_CMD_CREATE:

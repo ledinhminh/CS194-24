@@ -25,6 +25,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_UMOUNT 2
 #define QRPC_CMD_OPENDIR 3
 #define QRPC_CMD_CREATE 4
+#define QRPC_CMD_CONTINUE 9
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -63,6 +64,13 @@ struct qfs_inode {
     unsigned long backing_fd;
     spinlock_t lock;
 };
+
+struct qrpc_file_info {
+    char name[256];
+    int name_len;
+    char type;
+    mode_t mode;
+} __attribute__((packed));
 
 LIST_HEAD(list);
 
@@ -368,12 +376,16 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat) {
     //invoked by VFS when it notices an inode needs to be refreshed from disk
     struct qrpc_frame frame;
+    struct qrpc_file_info finfo;
     printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
            mnt, dentry, stat);
     printk("-inode name: %s\n", dentry->d_name.name);
     printk("-inode addr: 0x%p\n", dentry->d_inode);
 
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
+    memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+
+    printk("FINFO: name: %s\n", finfo.name);
     return 0;
 }
 

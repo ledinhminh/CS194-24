@@ -376,28 +376,50 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat) {
     //invoked by VFS when it notices an inode needs to be refreshed from disk
-    struct qrpc_frame frame;
-    struct qrpc_file_info finfo;
-    int done;
+    // struct qrpc_frame frame;
+    // struct qrpc_file_info finfo;
+    // int done;
 
-    printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
-           mnt, dentry, stat);
-    printk("-inode name: %s\n", dentry->d_name.name);
-    printk("-inode addr: 0x%p\n", dentry->d_inode);
+    // printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
+    //        mnt, dentry, stat);
+    // printk("-inode name: %s\n", dentry->d_name.name);
+    // printk("-inode addr: 0x%p\n", dentry->d_inode);
 
-    qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
-    done = 0;
-    while (!done){
-        memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
-        printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
-        if (frame.ret == QRPC_RET_OK){
-            done = 1;
-        } else if (frame.ret == QRPC_RET_CONTINUE) {
-            qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
-        } else {
-            break;
-        }
-    }
+    //as copied from afs...
+    struct inode *inode;
+    inode = dentry->d_inode;
+    generic_fillattr(inode, stat);
+
+    // I now think we're not supposed to do this....
+    // qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
+    // done = 0;
+    // while (!done){
+    //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+        
+    //     //create a dentry?
+    //     printk("%s len=%i\n", finfo.name, strlen(finfo.name));
+    //     struct qstr *name = kmalloc(sizeof(struct qstr), GFP_KERNEL);
+    //     char *fname = kmalloc(sizeof(char) * strlen(finfo.name), GFP_KERNEL);
+    //     memset(fname, 0, sizeof(char)*strlen(finfo.name));
+    //     memcpy(fname, &finfo.name, sizeof(char)*strlen(finfo.name));
+    //     name->name = fname;
+    //     printk("fname: %s\n", name->name);
+    //     struct dentry *child = d_alloc(dentry, name);
+    //     if (child == NULL){
+    //         printk("BAD HAPPENED\n");
+    //         break;
+    //     }
+
+
+    //     // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+    //     if (frame.ret == QRPC_RET_OK){
+    //         done = 1;
+    //     } else if (frame.ret == QRPC_RET_CONTINUE) {
+    //         qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
+    //     } else {
+    //         break;
+    //     }
+    // }
     return 0;
 }
 

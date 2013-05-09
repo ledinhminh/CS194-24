@@ -95,6 +95,14 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         int ret;
         if ((dir = opendir(s->path)) != NULL){
             while ((ent = readdir(dir)) != NULL){
+
+                //lets not pass this stuff
+                if(strcmp(ent->d_name, ".") == 0)
+                    continue;
+
+                if(strcmp(ent->d_name, "..") == 0)
+                    continue;
+
                 int size = strlen(s->path) + strlen(ent->d_name);
                 char full_path[size+1];
                 struct qrpc_file_info finfo;

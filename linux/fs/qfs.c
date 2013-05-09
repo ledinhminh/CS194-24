@@ -178,12 +178,14 @@ static struct vfsmount* qfs_automount(struct path *path){
 // FILE DIR OPERATIONS
 static int qfs_dir_open(struct inode *inode, struct file *file){
 	//creates a new file object and links it to the corresponding inode object.
+	//reference counting? (increment)
 	printk("QFS DIR OPEN\n");
 	return 0;
 }
 
 static int qfs_dir_release(struct inode *inode, struct file *file){
 	//called when last remaining reference to file is destroyed
+	//reference counting? (decrement)
 	printk("QFS DIR RELEASE\n");
 	return 0;
 }
@@ -191,8 +193,61 @@ static int qfs_dir_release(struct inode *inode, struct file *file){
 static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
 	//returns next directory in a directory listing. function called by readdir() system call.
 	printk("QFS DIR READDIR\n");
+	printk("FILE PATH: %s\n", file->f_dentry->d_name.name);
+
+	struct dentry *dentry = file->f_path.dentry;
+    ino_t ino = dentry->d_inode->i_ino;
+    int i = file->f_pos;
+    if (filldir(dirent, ".", 1, i, ino, DT_DIR) < 0){
+        printk("bad filldir\n");
+    }
+    file->f_pos++;
+    i++;
+    // struct list_head *p;
+    // struct dentry *tmp;
+    // struct inode *inode = file->f_dentry->d_inode;
+    // unsigned int ino = inode->i_ino;
+    // list_for_each(p, &file->f_dentry->d_subdirs){
+    //     tmp = list_entry(p, struct dentry, d_u.d_child);
+    //     printk("......child: %s\n", tmp->d_name.name);
+    //     filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
+    //     file->f_pos++;
+    // }
+
+    // return dcache_readdir(file, dirent, filldir);
+
+	// qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
+    // done = 0;
+    // while (!done){
+    //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+        
+    //     //create a dentry?
+    //     printk("%s len=%i\n", finfo.name, strlen(finfo.name));
+    //     struct qstr *name = kmalloc(sizeof(struct qstr), GFP_KERNEL);
+    //     char *fname = kmalloc(sizeof(char) * strlen(finfo.name), GFP_KERNEL);
+    //     memset(fname, 0, sizeof(char)*strlen(finfo.name));
+    //     memcpy(fname, &finfo.name, sizeof(char)*strlen(finfo.name));
+    //     name->name = fname;
+    //     printk("fname: %s\n", name->name);
+    //     struct dentry *child = d_alloc(dentry, name);
+    //     if (child == NULL){
+    //         printk("BAD HAPPENED\n");
+    //         break;
+    //     }
+
+
+    //     // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+    //     if (frame.ret == QRPC_RET_OK){
+    //         done = 1;
+    //     } else if (frame.ret == QRPC_RET_CONTINUE) {
+    //         qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
+    //     } else {
+    //         break;
+    //     }
+    // };
 	return 0;
 }
+
 
 static int qfs_dir_lock(struct file *file, int cmd, struct file_lock *lock){
 	//manipulate a file lock on the given file
@@ -208,12 +263,14 @@ static loff_t qfs_dir_llseek(struct file *file, loff_t offset, int origin){
 
 //FILE FILE OPERATIONS
 static int qfs_file_open(struct inode *inode, struct file *file){
+	printk("file: %s\n", file->f_path.dentry->d_name.name);
 	//creates a new file object and links it to the corresponding indoe object.
 	printk("QFS FILE OPEN\n");
 	return 0;
 }
 
 static int qfs_file_release(struct inode *inode, struct file *file){
+	printk("file: %s\n", file->f_path.dentry->d_name.name);
 	//called when last remaining reference to file is destroyed
 	printk("QFS FILE RELEASE\n");
 	return 0;
@@ -335,7 +392,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
 
     printk(KERN_INFO "qfs_lookup: desired path is %s\n", dentry->d_name.name);
 
-    return NULL;
+    return simple_lookup(dir, dentry, flags);
 }
 
 static int qfs_link(struct dentry *old_dentry, struct inode *indoe, struct dentry *dentry){
@@ -386,9 +443,21 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     // printk("-inode addr: 0x%p\n", dentry->d_inode);
 
     //as copied from afs...
+    printk("QFS INODE GETATTR\n");
+    printk("...name: %s\n", dentry->d_name.name);
+    printk("...dev: %lu\n", stat->dev);
+    printk("...ino: %lu\n", stat->ino);
+    printk("...mode: %lu\n", stat->mode);
     struct inode *inode;
     inode = dentry->d_inode;
     generic_fillattr(inode, stat);
+
+    struct list_head *p;
+    struct dentry *tmp;
+    list_for_each(p, &dentry->d_subdirs){
+    	tmp = list_entry(p, struct dentry, d_u.d_child);
+    	printk("......child: %s\n", tmp->d_name.name);
+    }
 
     // I now think we're not supposed to do this....
     // qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
@@ -514,6 +583,20 @@ static int qfs_set_super(struct super_block *s, void *data)
 	return set_anon_super(s, NULL);
 }
 
+
+///lwn.net/Articles/57368
+static struct inode *qfs_make_inode(struct super_block *sb, int mode){
+	struct inode *ret = new_inode(sb);
+
+	if(ret){
+		ret->i_mode = mode;
+		ret->i_uid = ret->i_gid = 0;
+		ret->i_blocks = 0;
+		ret->i_atime = ret->i_mtime = ret->i_ctime = CURRENT_TIME;
+	}
+
+	return ret;
+}
 // This is a combination of fs/super.c:mount_bdev and
 // fs/afs/super.c:afs_mount.  While it might be cleaner to call them,
 // I just hacked them apart... :)
@@ -558,9 +641,9 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
     sb->s_bdev = bdev;
 
 	inode = iget_locked(sb, 1);
-	inode->i_mode = S_IFDIR;
+	inode->i_mode = S_IFDIR | 0644;
 	inode->i_op   = &qfs_inode_operations;
-	inode->i_fop  = &qfs_file_operations;
+	inode->i_fop  = &qfs_dir_operations;
 	unlock_new_inode(inode);
 
 	//make a root dentry out of the inode
@@ -575,6 +658,27 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	//fill out inodes?
 	printk(KERN_INFO "ROOT INODE ADDR: 0x%p\n", inode);
 	printk(KERN_INFO "ROOT DENTRY ADDR: 0x%p\n", sb->s_root);
+
+	struct dentry *dentry;
+	struct qstr qname;
+	struct inode *fde;
+
+	qname.name = ".";
+	qname.len = strlen(qname.name);
+	qname.hash = full_name_hash(qname.name, qname.len);
+	dentry = d_alloc(sb->s_root, &qname);
+	if(dentry == NULL){
+		printk("BAD HAPPENED\n");
+		panic("Couldn't get a dentry");
+	}
+	fde = qfs_make_inode(sb, DT_DIR | 0644);
+	if (!fde){
+		printk("BAD HAPPENED INODE\n");
+		panic("Couldn't make inode");
+	}
+	fde->i_fop = &qfs_file_operations;
+
+	d_add(dentry, fde);
 
 	return dget(sb->s_root);
 }

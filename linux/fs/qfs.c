@@ -29,6 +29,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
+#define QRPC_RET_CONTINUE 2
 
 #define QRPC_DATA_SIZE 1024
 
@@ -377,15 +378,26 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     //invoked by VFS when it notices an inode needs to be refreshed from disk
     struct qrpc_frame frame;
     struct qrpc_file_info finfo;
+    int done;
+
     printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
            mnt, dentry, stat);
     printk("-inode name: %s\n", dentry->d_name.name);
     printk("-inode addr: 0x%p\n", dentry->d_inode);
 
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
-    memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
-
-    printk("FINFO: name: %s\n", finfo.name);
+    done = 0;
+    while (!done){
+        memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+        printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+        if (frame.ret == QRPC_RET_OK){
+            done = 1;
+        } else if (frame.ret == QRPC_RET_CONTINUE) {
+            qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
+        } else {
+            break;
+        }
+    }
     return 0;
 }
 

@@ -16,6 +16,7 @@ static void add_frame_to_buf(QRPCState *s, QRPCFrame *frame){
 
 static uint64_t qrpc_read(void *v, hwaddr a, unsigned w)
 {
+    uint8_t ret;
     QRPCState *s = v;
 
     // This might be useful for debugging... :)
@@ -32,7 +33,15 @@ static uint64_t qrpc_read(void *v, hwaddr a, unsigned w)
     if (a > sizeof(QRPCFrame))
         return -1;
 
-    return ((uint8_t *)(&s->frame))[a];
+    // ret = ((uint8_t *)(&s->frame))[a];
+    QRPCFrame *frame = &(s->buffer[s->buf_read]);
+    ret = ((uint8_t *) frame)[a]; 
+    //check to see if we're at the end of the frame
+    if (a == (sizeof(QRPCFrame) - 1)){
+        s->buf_read += 1;
+    }
+
+    return ret;
 }
 
 static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
@@ -148,8 +157,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         //return an ok
         s->frame.ret = QRPC_RET_OK;
 
-        //set the last frame buffer to OK
-        s->buffer[s->buf_size].ret = QRPC_RET_OK;
         //just gonna print out the buffer
         // int i;
         // struct QRPCFrame frame;
@@ -167,6 +174,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         mode_t mode;
         int fd, path_size;
         char* path;
+        QRPCFrame frame;
         
         memcpy(&mode, s->frame.data, sizeof(short));
         
@@ -179,15 +187,16 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         fd = creat(path, mode);
         printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
         
-        memcpy(s->frame.data, &fd, sizeof(int));
-        
+        memcpy(frame.data, &fd, sizeof(int));
+        add_frame_to_buf(s, &frame);
         break;
         }
     default:
         // Silently drop all unknown commands
-        fprintf(stderr, "Unknown command %u\n", d);
         break;
     }
+    //set the last frame buffer to OK
+    s->buffer[s->buf_size - 1].ret = QRPC_RET_OK;
 }
 
 // Defines an operation table for memory IO

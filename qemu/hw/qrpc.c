@@ -77,9 +77,31 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         //return and ok
         s->frame.ret = QRPC_RET_OK;
         break;
-    }
+        }
+    case QRPC_CMD_CREATE:
+        {
+        mode_t mode;
+        int fd, path_size;
+        char* path;
+        
+        memcpy(&mode, s->frame.data, sizeof(short));
+        
+        // We need the full path.
+        path_size = strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1;
+        path = malloc(path_size * sizeof(char));
+        
+        sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
+        
+        fd = creat(path, mode);
+        printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
+        
+        memcpy(s->frame.data, &fd, sizeof(int));
+        
+        break;
+        }
     default:
         // Silently drop all unknown commands
+        fprintf(stderr, "Unknown command %u\n", d);
         break;
     }
 }

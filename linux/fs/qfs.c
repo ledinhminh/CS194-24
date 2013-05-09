@@ -24,6 +24,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_MOUNT  1
 #define QRPC_CMD_UMOUNT 2
 #define QRPC_CMD_OPENDIR 3
+#define QRPC_CMD_CREATE 4
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -50,10 +51,16 @@ struct qrpc_frame {
 
 static struct kmem_cache *qfs_inode_cachep;
 
+static const struct super_operations qfs_super_ops;
+const struct dentry_operations qfs_dentry_operations;
+const struct file_operations qfs_dir_operations;
+const struct file_operations qfs_file_operations;
+const struct inode_operations qfs_inode_operations;
+
 struct qfs_inode {
+    struct inode inode;
     struct list_head list;
     unsigned long backing_fd;
-    struct inode inode;
     spinlock_t lock;
 };
 
@@ -84,11 +91,15 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
 //these at the start
 static void qfs_inode_init(void* _inode) {
     struct qfs_inode* inode;
-    printk(KERN_INFO "qfs_inode_init: initing an qfs_inode...\n");
+    printk(KERN_INFO "qfs_inode_init: initing an qfs_inode at %p...\n", _inode);
 
+    // Only generic initialization stuff. Anything per-inode, we do when we really need to press the inode into service.
     inode = _inode;
     memset(inode, 0, sizeof(*inode));
+    
+    // What does this mean?!
     inode_init_once(&inode->inode);
+    
     spin_lock_init(&inode->lock);
 }
 
@@ -101,8 +112,10 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
         printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
         return NULL;
     }
-
-    // Set some flags here.. I think
+    
+    // I don't know the difference between inode_init_once and this.
+    // And why are there always so many allocations?
+    inode_init_always(sb, &qnode->inode);
 
     // Add qfs_inode to list
     printk(KERN_INFO "qfs_alloc_inode: adding inode to list\n");
@@ -236,9 +249,65 @@ static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 }
 
 // INODE OPERATIONS
-static int qfs_create(struct inode *inode, struct dentry *dentry, umode_t mode, bool boolean){
-    printk("QFS INODE CREATE\n---inode: 0x%p\n---dentry0x%p\n---mode: %d\n boolean: %d\n",
-           inode, dentry, mode, boolean);
+static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
+    struct qrpc_frame frame;
+    int backing_fd = 0;
+    struct inode* inode;
+    struct qfs_inode* qnode;
+    
+    printk(KERN_INFO "qfs_create: enter\n");
+    
+    // Make a new inode for this file.
+    inode = qfs_alloc_inode(dir->i_sb);
+    qnode = qnode_of_inode(inode);
+    
+    // Some inode bookkeeping. From ramfs_get_inode
+    // Could do with some refactoring, we might (?) need to do this elsewhere.
+    inode->i_ino = get_next_ino();
+    inode_init_owner(inode, dir, mode);
+    
+    inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+    switch (mode & S_IFMT) {
+    // default:
+        // init_special_inode(inode, mode, dev);
+        // break;
+    case S_IFREG:
+        inode->i_op = &qfs_inode_operations;
+        inode->i_fop = &qfs_file_operations;
+        break;
+    case S_IFDIR:
+        inode->i_op = &qfs_inode_operations;
+        inode->i_fop = &qfs_file_operations;
+
+        /* directory inodes start off with i_nlink == 2 (for "." entry) */
+        inc_nlink(inode);
+        break;
+    case S_IFLNK:
+        // inode->i_op = &page_symlink_inode_operations;
+        break;
+    }
+    
+    
+    // TODO: Case and assign file_operations.
+    
+    memcpy(frame.data, &mode, sizeof(short));
+    strcpy(frame.data + sizeof(short), dentry->d_name.name);
+    
+    // Here we go.
+    qtransfer(dir, QRPC_CMD_CREATE, &frame);
+    
+    memcpy(&backing_fd, frame.data, sizeof(int));
+    // TODO: Do some error checking here
+    
+    // Add the fd to the qnode's info
+    printk(KERN_INFO "qfs_create: backing fd=%d\n", backing_fd);
+    qnode->backing_fd = backing_fd;
+    
+    // I think we have to do this. From ramfs_mknod
+    d_instantiate(dentry, inode);
+    dget(dentry);
+    
+    printk(KERN_INFO "qfs_create: exit\n");
     return 0;
 }
 
@@ -296,7 +365,7 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 //     return 0;
 // }
 
-static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat){
+static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat) {
     //invoked by VFS when it notices an inode needs to be refreshed from disk
     struct qrpc_frame frame;
     printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
@@ -367,8 +436,6 @@ const struct file_operations qfs_file_operations = {
 	.flock       = qfs_file_flock,
 };
 
-
-
 const struct inode_operations qfs_inode_operations = {
 	.create     = qfs_create,
 	.lookup     = qfs_lookup,
@@ -378,7 +445,7 @@ const struct inode_operations qfs_inode_operations = {
 	.mkdir      = qfs_mkdir,
 	.rmdir      = qfs_rmdir,
 	.rename     = qfs_rename,
-	.permission = NULL, //we could use our qfs_permission... but theres a generic
+	// .permission = NULL, //we could use our qfs_permission... but theres a generic
 	.getattr    = qfs_getattr,
 	.setattr    = qfs_setattr,
 };
@@ -442,7 +509,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	sb->s_magic = ((int *)"QRFS")[0];
 	sb->s_op = &qfs_super_ops;
 	sb->s_d_op = &qfs_dentry_operations;
-	sb->s_bdev = bdev;
+    sb->s_bdev = bdev;
 
 	inode = iget_locked(sb, 1);
 	inode->i_mode = S_IFDIR;
@@ -479,9 +546,8 @@ static struct file_system_type qfs_type =
 int __init qfs_init(void)
 {
     // Allocate our kmem cache.
-
-    // TODO: Need object ctors?
-    qfs_inode_cachep = kmem_cache_create("qfs_inode_cache",
+    
+    qfs_inode_cachep = kmem_cache_create("qfs_inode_cache", 
         sizeof(struct qfs_inode), 0, SLAB_HWCACHE_ALIGN, qfs_inode_init);
 
     register_filesystem(&qfs_type);

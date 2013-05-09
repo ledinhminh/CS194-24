@@ -8,6 +8,9 @@
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
+#define QRPC_CMD_UMOUNT 2
+#define QRPC_CMD_OPENDIR 3
+#define QRPC_CMD_CREATE 4
 
 #define QRPC_DATA_SIZE 1024
 

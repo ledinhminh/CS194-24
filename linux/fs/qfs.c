@@ -26,6 +26,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_OPENDIR 3
 #define QRPC_CMD_CREATE 4
 #define QRPC_CMD_CONTINUE 9
+#define QRPC_CMD_REVALIDATE 15
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -170,8 +171,20 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 
 // DENTRY OPERATIONS
 static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
+    struct qrpc_frame frame;
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
+    
+    
+    frame.cmd = QRPC_CMD_REVALIDATE;
+    strcpy(frame.data, dentry->d_name.name);
+    
+    // Go to the host every single time.
+    qrpc_transfer(dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
+    
+    _debug("exists: %u", frame.data[0]); 
+   
+    
     _leave(" = 1 [ok]");
     return 1;
 }
@@ -245,15 +258,41 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     struct list_head *p;
     struct dentry *tmp;
     struct inode *inode = file->f_dentry->d_inode;
-    unsigned int ino = inode->i_ino;
-    
-    _enter("");
+    unsigned f_pos = file->f_pos;
+    int ret_num = 0;
+
+
+    printk("READDIR()\n");
+    if (f_pos == 0){
+        printk("...creating the (dot) directory\n");
+        filldir(dirent, ".", 1, f_pos, inode->i_ino, DT_DIR);
+        file->f_pos = f_pos = 1;
+        ret_num++;
+    }
+    if (f_pos == 1){
+        printk("...creating the (dot dot) directory\n");
+        filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, DT_DIR);
+        file->f_pos = f_pos = 2;
+        ret_num++;
+    }
+
+    //we can check f_pos to see where we left off
+    unsigned ino;
+    int i = 0; //we're gonna assume the order doesn't change....
     
     list_for_each(p, &file->f_dentry->d_subdirs) {
-        tmp = list_entry(p, struct dentry, d_u.d_child);
-        printk("......child: %s\n", tmp->d_name.name);
-        filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
-        file->f_pos++;
+
+        if ((i+3) > f_pos){
+            tmp = list_entry(p, struct dentry, d_u.d_child);
+            printk("......filldir: %s\n", tmp->d_name.name);
+            ino = tmp->d_inode->i_ino;
+            filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
+            file->f_pos++;
+            ret_num++;
+        }
+
+        i++;
+
     }
 
     // return dcache_readdir(file, dirent, filldir);
@@ -287,8 +326,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     //         break;
     //     }
     // };
-    _leave("");
-	return 0;
+    _leave(" = %u", ret_num);
+	return ret_num;
 }
 
 
@@ -369,7 +408,7 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     // Make a new inode for this file.
     inode = new_inode(dir->i_sb);
     // inode = qfs_alloc_inode(dir->i_sb);
-    if (!inode) // Why would this happen?
+    // if (!inode) // Why would this happen?
         
     qnode = qnode_of_inode(inode);
     
@@ -412,7 +451,7 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     // TODO: Do some error checking here
     
     // Add the fd to the qnode's info
-    printk(KERN_INFO "qfs_create: backing fd=%d\n", backing_fd);
+    _debug("qfs_create: backing fd=%d", backing_fd);
     qnode->backing_fd = backing_fd;
     
     // I think we have to do this. From ramfs_mknod

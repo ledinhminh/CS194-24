@@ -199,6 +199,26 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         add_frame_to_buf(s, &frame);
         break;
         }
+    case QRPC_CMD_REVALIDATE:
+        // Just check if it exists.
+        {
+        int path_size;
+        short ret;
+        char* path;
+        QRPCFrame frame;
+        
+        // We need the full path.
+        path_size = strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1;
+        path = malloc(path_size * sizeof(char));
+        
+        sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
+        
+        ret = access(path, F_OK) != -1 ? 1 : 0;
+        
+        memcpy(frame.data, &ret, sizeof(short));
+        add_frame_to_buf(s, &frame);
+        break;
+        }
     default:
         // Silently drop all unknown commands
         break;

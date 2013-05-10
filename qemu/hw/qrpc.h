@@ -7,6 +7,7 @@
 #define QRPC_CMD_OPENDIR 3
 #define QRPC_CMD_CREATE 4
 #define QRPC_CMD_CONTINUE 9
+#define QRPC_CMD_REVALIDATE 15
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1

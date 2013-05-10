@@ -78,9 +78,16 @@ LIST_HEAD(list);
 spinlock_t list_mutex;
 struct qfs_inode head;
 
+#define kenter(FMT,...) printk("==> %s("FMT")\n",__func__ ,##__VA_ARGS__)
+#define kleave(FMT,...) printk("<== %s()"FMT"\n",__func__ ,##__VA_ARGS__)
+#define kdebug(FMT,...) printk("    "FMT"\n" ,##__VA_ARGS__)
+
+#define _enter(FMT,...) kenter(FMT,##__VA_ARGS__)
+#define _leave(FMT,...) kleave(FMT,##__VA_ARGS__)
+#define _debug(FMT,...) kdebug(FMT,##__VA_ARGS__)
 
 //because getting the block device SUCKS~!!!
-static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f){
+static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 	struct block_device *bdev;
 
 	//from the inode, get the superblock, then the block dev
@@ -91,9 +98,10 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f){
 }
 
 //looking for an dentry, given a name and root inode...
-static dentry* qlookup(struct superblock *sb, struct char *name, struct inode *dir){
-    struct dentry *root = sb->s_root;
-}
+// static struct dentry* qlookup(struct superblock *sb, char *name, struct inode *dir) {
+    // struct dentry *root = sb->s_root;
+    // return root; // wtf?
+// }
 
 // SUPER OPERATIONS
 static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
@@ -197,8 +205,8 @@ static int qfs_dir_release(struct inode *inode, struct file *file){
 
 static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
 	//returns next directory in a directory listing. function called by readdir() system call.
-	printk("QFS DIR READDIR\n");
-	printk("FILE PATH: %s\n", file->f_dentry->d_name.name);
+	// printk("QFS DIR READDIR\n");
+	// printk("FILE PATH: %s\n", file->f_dentry->d_name.name);
 
 	// struct dentry *dentry = file->f_path.dentry;
  //    ino_t ino = dentry->d_inode->i_ino;
@@ -384,24 +392,102 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
 }
 
 static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
-    // This function searches a directory for an inode corresponding to a filename specified in the given dentry.
+    // Love: This function searches a directory for an inode corresponding to a filename specified in the given dentry.
+    // Mauerer: lookup finds the inode instance of a filesystem object by reference to its name (expressed as a string).
+    // ramfs: Lookup the data. This is trivial - if the dentry didn't already exist, we know it is negative.  
+    //        Set d_op to delete negative dentries.
+    
+    // Look at afs_lookup closely.
 
+    struct qrpc_frame frame;
+    struct qrpc_file_info finfo;
     struct qfs_inode* qdir;
-    printk(KERN_INFO "qfs_lookup: enter\n");
-    // printk("QFS INODE LOOKUP\n---dir: 0x%p\n---dentry: 0x%p\n------d_parent: 0x%p\n------d_name: %s\n---flags: %d\n",
-    //        dir, dentry, dentry->d_parent, dentry->d_name.name, flags);
+    struct inode* inode;
+    
+    struct list_head* position;
+    struct qfs_inode* entry;
+    
+    int done;
+    
+    _enter("dir=%p, dentry=%s", dir, dentry->d_name.name);
+    
+    qdir = qnode_of_inode(dir);
+    printk("QFS INODE LOOKUP\n---dir: 0x%p\n---dentry: 0x%p\n------d_parent: 0x%p\n------d_name: %s\n---flags: %d\n",
+           dir, dentry, dentry->d_parent, dentry->d_name.name, flags);
 
     printk("QFS INODE LOOKUP\n");
     printk("---looking for: %s\n", dentry->d_name.name);
-    printk("---its inode: %p\n", dentry->d_inode);
+    // printk("---its inode: %p\n", dentry->d_inode);
     // We're supposed to fill out the dentry. Why is it associated already?
     BUG_ON(dentry->d_inode != NULL);
+    
+    // Do we have it in our inode list?
+    // No need to ask the dir. We consult our list of all inodes we ever have.
+    // Is this what we're supposed to do?
+    list_for_each_entry(entry, &list, list) {
+        struct inode* inode;
+        struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
+        struct dentry* loop_dentry;
+        
+        _debug("inode: i_ino=%p", entry->inode);
+        hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
+            _debug("dentry: d_name=%s", loop_dentry->d_name.name);
+            
+            if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
+                _debug("found matching filename in inode list, returning");
+                
+                d_instantiate(dentry, inode);
+                dget(dentry);
+                return NULL;
+            
+            }
+        }
+    }
+    
+    // We don't have it. Go to the host and see if it really exists. If it does, allocate an inode for it.
+    _debug("not in list, doing transfer");
+    
+    qtransfer(dir, QRPC_CMD_OPENDIR, &frame);
+    done = 0;
+    _debug("time to read");
+    while (!done) {
+        memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+        
+        //create a dentry?
+        
+        // We should be maybe creating dentries and inodes on the fly here. 
+        // At the very least, we need to create one for the one that is requested.
+        
+        if (strcmp(finfo.name, dentry->d_name.name) == 0) {
+            _debug("found matching filename %s\n", finfo.name);
+            // Do more stuff here!!
+        }
+
+        if (frame.ret == QRPC_RET_OK) {
+            done = 1;
+        } else if (frame.ret == QRPC_RET_CONTINUE) {
+            qtransfer(dir, QRPC_CMD_CONTINUE, &frame);
+        } else {
+            break;
+        }
+    }
+    
+    
+    
+    // Found it. 
 
     qdir = qnode_of_inode(dir);
     printk(KERN_INFO "qfs_lookup: desired path is %s\n", dentry->d_name.name);
+    // Why do we iget_locked here while in qfs_create we allocate a new inode ourselves?
+    // Do we need to?
+    
+    // inode = iget_locked(dir->i_sb, get_next_ino());
+    
+    // Quick 
+    // d_add(dentry, inode);
 
-    struct list_head *p;
-    struct dentry *tmp;
+    // struct list_head *p;
+    // struct dentry *tmp;
     // list_for_each(p, &dir->i_subdirs){
     //     tmp = list_entry(p, struct dentry, d_u.d_child);
     //     printk("......child: %s\n", tmp->d_name.name);

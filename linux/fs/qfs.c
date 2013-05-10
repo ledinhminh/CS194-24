@@ -88,13 +88,18 @@ struct qfs_inode head;
 
 //because getting the block device SUCKS~!!!
 static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
-	struct block_device *bdev;
+	
+    struct block_device *bdev;
+    
+    _enter("");
 
-	//from the inode, get the superblock, then the block dev
+	// from the inode, get the superblock, then the block dev
 	bdev = inode->i_sb->s_bdev;
  	f->cmd = cmd;
 	f->ret = QRPC_RET_ERR;
 	qrpc_transfer(bdev, f, sizeof(struct qrpc_frame));
+    
+    _leave("");
 }
 
 //looking for an dentry, given a name and root inode...
@@ -113,7 +118,8 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
 //these at the start
 static void qfs_inode_init(void* _inode) {
     struct qfs_inode* inode;
-    printk(KERN_INFO "qfs_inode_init: initing an qfs_inode at %p...\n", _inode);
+    
+    _enter("%p", _inode);
 
     // Only generic initialization stuff. Anything per-inode, we do when we really need to press the inode into service.
     inode = _inode;
@@ -126,23 +132,33 @@ static void qfs_inode_init(void* _inode) {
 }
 
 static struct inode* qfs_alloc_inode(struct super_block *sb) {
+    // Hey natto, learn to read! Shit doesn't work this way: Mauerer 668
+    // First, a new inode is created by the new_inode standard function of VFS; this basically boils down to the
+    // same proc-specific proc_alloc_inode routine mentioned above that makes use of its own slab cache.
+    
+    // Call chain: iget_locked -> new_inode -> new_inode_pseudo -> alloc_inode -> qfs_alloc_inode
+
     struct qfs_inode *qnode;
 
-    printk("QFS SUPER ALLOC_INODE START\n");
+    _enter("");
     qnode = kmem_cache_alloc(qfs_inode_cachep, GFP_KERNEL);
+    
     if (!qnode) {
-        printk(KERN_INFO "qfs_alloc_inode: alloc for *inode failed\n");
+        _debug("alloc for *inode failed\n");
+        _leave(" = NULL");
         return NULL;
     }
     
+    // Edit: Caller alloc_inode does this for us.
     // I don't know the difference between inode_init_once and this.
     // And why are there always so many allocations?
-    inode_init_always(sb, &qnode->inode);
+    // inode_init_always(sb, &qnode->inode);
 
-    // Add qfs_inode to list
-    printk(KERN_INFO "qfs_alloc_inode: adding inode to list\n");
+    // Add qfs_inode to own list
+    _debug("adding inode to list");
     list_add(&qnode->list, &list);
 
+    _leave("");
     return &qnode->inode;
 }
 
@@ -153,8 +169,9 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 // }
 
 // DENTRY OPERATIONS
-static int qfs_revalidate(struct dentry *dentry, unsigned int flags){
-    printk("QFS DENTRY REVALIDATE\n");
+static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
+    _enter("dentry=%s", dentry->d_name.name);
+    _leave("");
     return 0;
 }
 
@@ -168,8 +185,15 @@ static void qfs_release(struct dentry *dentry){
     return;
 }
 
-static void qfs_destroy_inode(struct inode *inode){
-	printk("QFS SUPER DESTROY INODE\n");
+static void qfs_destroy_inode(struct inode *inode) {
+    struct qfs_inode *qnode;
+	_enter("");
+    
+    qnode = qnode_of_inode(inode);
+    // Do we need a lock?
+    kmem_cache_free(qfs_inode_cachep, qnode);
+    
+    _leave("");
 	return;
 }
 
@@ -221,7 +245,10 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     struct dentry *tmp;
     struct inode *inode = file->f_dentry->d_inode;
     unsigned int ino = inode->i_ino;
-    list_for_each(p, &file->f_dentry->d_subdirs){
+    
+    _enter("");
+    
+    list_for_each(p, &file->f_dentry->d_subdirs) {
         tmp = list_entry(p, struct dentry, d_u.d_child);
         printk("......child: %s\n", tmp->d_name.name);
         filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
@@ -259,6 +286,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     //         break;
     //     }
     // };
+    _leave("");
 	return 0;
 }
 
@@ -335,10 +363,13 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     struct inode* inode;
     struct qfs_inode* qnode;
     
-    printk(KERN_INFO "qfs_create: enter\n");
+    _enter("");
     
     // Make a new inode for this file.
-    inode = qfs_alloc_inode(dir->i_sb);
+    inode = new_inode(dir->i_sb);
+    // inode = qfs_alloc_inode(dir->i_sb);
+    if (!inode) // Why would this happen?
+        
     qnode = qnode_of_inode(inode);
     
     // Some inode bookkeeping. From ramfs_get_inode
@@ -387,7 +418,7 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     d_instantiate(dentry, inode);
     dget(dentry);
     
-    printk(KERN_INFO "qfs_create: exit\n");
+    _leave("");
     return 0;
 }
 
@@ -396,6 +427,20 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     // Mauerer: lookup finds the inode instance of a filesystem object by reference to its name (expressed as a string).
     // ramfs: Lookup the data. This is trivial - if the dentry didn't already exist, we know it is negative.  
     //        Set d_op to delete negative dentries.
+    // vfs.txt:
+    //  lookup: called when the VFS needs to look up an inode in a parent
+    //      directory. The name to look for is found in the dentry. This
+    //      method must call d_add() to insert the found inode into the
+    //      dentry. The "i_count" field in the inode structure should be
+    //      incremented. If the named inode does not exist a NULL inode
+    //       should be inserted into the dentry (this is called a negative
+    //      dentry). Returning an error code from this routine must only
+    //      be done on a real error, otherwise creating inodes with system
+    //      calls like create(2), mknod(2), mkdir(2) and so on will fail.
+    //      If you wish to overload the dentry methods then you should
+    //      initialise the "d_dop" field in the dentry; this is a pointer
+    //      to a struct "dentry_operations".
+    //      This method is called with the directory inode semaphore held
     
     // Look at afs_lookup closely.
 
@@ -409,17 +454,14 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     
     int done;
     
-    _enter("dir=%p, dentry=%s", dir, dentry->d_name.name);
+    _enter("dir=%p, dentry=%s, parent=%s", dir, dentry->d_name.name, dentry->d_parent->d_name.name);
     
     qdir = qnode_of_inode(dir);
-    printk("QFS INODE LOOKUP\n---dir: 0x%p\n---dentry: 0x%p\n------d_parent: 0x%p\n------d_name: %s\n---flags: %d\n",
-           dir, dentry, dentry->d_parent, dentry->d_name.name, flags);
 
-    printk("QFS INODE LOOKUP\n");
-    printk("---looking for: %s\n", dentry->d_name.name);
-    // printk("---its inode: %p\n", dentry->d_inode);
     // We're supposed to fill out the dentry. Why is it associated already?
     BUG_ON(dentry->d_inode != NULL);
+    
+    _debug("trying inode list");
     
     // Do we have it in our inode list?
     // No need to ask the dir. We consult our list of all inodes we ever have.
@@ -429,16 +471,18 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
         struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
         struct dentry* loop_dentry;
         
-        _debug("inode: i_ino=%p", entry->inode);
+        _debug("inode=%lu", entry->inode.i_ino);
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
             _debug("dentry: d_name=%s", loop_dentry->d_name.name);
             
             if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
-                _debug("found matching filename in inode list, returning");
+                _debug("found matching filename in inode list, instantiating dentry");
+                _debug("i_ino=%lu", entry->inode.i_ino);
                 
                 d_instantiate(dentry, inode);
                 dget(dentry);
-                return NULL;
+                _leave(" = %p", dentry);
+                return dentry;
             
             }
         }
@@ -493,6 +537,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     //     printk("......child: %s\n", tmp->d_name.name);
     // }
 
+    _leave(" = NULL");
     return NULL;
 }
 
@@ -521,7 +566,7 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 	return 0;
 }
 
-static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry){
+static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry) {
 	printk("QFS INODE RENAME\n");
 	return 0;
 }
@@ -544,6 +589,8 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     // printk("-inode addr: 0x%p\n", dentry->d_inode);
 
     //as copied from afs...
+    _enter("");
+    
     printk("QFS INODE GETATTR\n");
     printk("...name: %s\n", dentry->d_name.name);
     printk("...dev: %lu\n", stat->dev);
@@ -591,6 +638,8 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     //     }
     // }
     return 0;
+    
+    _leave("");
 }
 
 static int qfs_setattr(struct dentry *dentry, struct iattr *attr){
@@ -685,17 +734,22 @@ static int qfs_set_super(struct super_block *s, void *data)
 }
 
 
-///lwn.net/Articles/57368
-static struct inode *qfs_make_inode(struct super_block *sb, int mode){
+// lwn.net/Articles/57368
+static struct inode *qfs_make_inode(struct super_block *sb, int mode) {
 	struct inode *ret = new_inode(sb);
+    
+    _enter("");
 
-	if(ret){
+	if (ret) {
+        // ramfs_get_inode
+        ret->i_ino = get_next_ino();
 		ret->i_mode = mode;
 		ret->i_uid = ret->i_gid = 0;
 		ret->i_blocks = 0;
 		ret->i_atime = ret->i_mtime = ret->i_ctime = CURRENT_TIME;
 	}
 
+    _leave(" = i_ino=%lu", ret->i_ino);
 	return ret;
 }
 
@@ -768,30 +822,36 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
     int done;
     struct qrpc_file_info finfo;
 
+    // TODO: can remove this later
     //lets fill up some stuff...
+    
+    _debug("filling out some inodes");
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;
-    while (!done){
+    while (!done) {
         memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
         
         //create a dentry?
-        printk("%s len=%i\n", finfo.name, strlen(finfo.name));
+        _debug("%s len=%i", finfo.name, strlen(finfo.name));
 
         //create the qstr
+        // This should not be created on the stack
     	qname.name = finfo.name;
     	qname.len = strlen(finfo.name);
     	qname.hash = full_name_hash(finfo.name, qname.len);
     
         //create the dentry	
+        _debug("creatind dentry");
         dentry = d_alloc(sb->s_root, &qname);
-    	if(dentry == NULL){
+    	if (dentry == NULL) {
     		printk("BAD HAPPENED\n");
     		panic("Couldn't get a dentry");
     	}
 
         //create the inode
+        _debug("creating inode");
     	fde = qfs_make_inode(sb, DT_DIR | 0644);
-    	if (!fde){
+    	if (!fde) {
     		printk("BAD HAPPENED INODE\n");
     		panic("Couldn't make inode");
     	}
@@ -799,12 +859,14 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
         //assign operations
         //TODO base it off if its actually a directory or file
     	fde->i_fop = &qfs_dir_operations;
+        fde->i_op = &qfs_inode_operations;
 
         //add it to the dcache (also attaches it to dentry)
+        // Calls d_instantiate and d_rehash
     	d_add(dentry, fde);
 
         // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
-        if (frame.ret == QRPC_RET_OK){
+        if (frame.ret == QRPC_RET_OK) {
             done = 1;
         } else if (frame.ret == QRPC_RET_CONTINUE) {
             qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);

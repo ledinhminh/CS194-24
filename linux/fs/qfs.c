@@ -102,6 +102,12 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
     _leave("");
 }
 
+//looking for an dentry, given a name and root inode...
+// static struct dentry* qlookup(struct superblock *sb, char *name, struct inode *dir) {
+    // struct dentry *root = sb->s_root;
+    // return root; // wtf?
+// }
+
 // SUPER OPERATIONS
 static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
@@ -164,24 +170,19 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 
 // DENTRY OPERATIONS
 static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
-    //determines whether give dentry object is valid. called whever VFS is prepping to use dentry
-    //from the dcache. Most set to NULL since objects in dcache are always valid....
+    // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
-    _leave("");
-    return 0;
+    _leave(" = 1 [ok]");
+    return 1;
 }
 
 static int qfs_delete(const struct dentry *dentry){
-    //called when dentry d_count reaches zero. requires dcache_lock and dentry's d_lock
-    _enter("dentry=%s", dentry->d_name.name);
-    _leave("");
+    printk("QFS DENTRY DELETE\n---dentry: 0x%p\n", dentry);
     return 0;
 }
 
 static void qfs_release(struct dentry *dentry){
-    //called by VFS when the specified dentry is going to be freed. default does nothing
-    _enter("dentry-%s", dentry->d_name.name);
-    _leave("");
+    printk("QFS DENTRY RELEASE\n---dentry: 0x%p\n", dentry);
     return;
 }
 
@@ -216,7 +217,7 @@ static struct vfsmount* qfs_automount(struct path *path){
 static int qfs_dir_open(struct inode *inode, struct file *file){
 	//creates a new file object and links it to the corresponding inode object.
 	//reference counting? (increment)
-    printk("QFS DIR OPEN file:%s\n", file->f_path.dentry->d_name.name);
+	printk("QFS DIR OPEN\n");
 	return 0;
 }
 
@@ -244,39 +245,15 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     struct list_head *p;
     struct dentry *tmp;
     struct inode *inode = file->f_dentry->d_inode;
-    unsigned f_pos = file->f_pos;
-    int ret_num = 0;
-
-
-    printk("READDIR()\n");
-    if (f_pos == 0){
-        printk("...creating the (dot) directory\n");
-        filldir(dirent, ".", 1, f_pos, inode->i_ino, DT_DIR);
-        file->f_pos = f_pos = 1;
-        ret_num++;
-    }
-    if (f_pos == 1){
-        printk("...creating the (dot dot) directory\n");
-        filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, DT_DIR);
-        file->f_pos = f_pos = 2;
-        ret_num++;
-    }
-
-    //we can check f_pos to see where we left off
-    unsigned ino;
-    int i = 0; //we're gonna assume the order doesn't change....
+    unsigned int ino = inode->i_ino;
+    
+    _enter("");
+    
     list_for_each(p, &file->f_dentry->d_subdirs) {
-
-        if ((i+3) > f_pos){
-            tmp = list_entry(p, struct dentry, d_u.d_child);
-            printk("......filldir: %s\n", tmp->d_name.name);
-            ino = tmp->d_inode->i_ino;
-            filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
-            file->f_pos++;
-            ret_num++;
-        }
-
-        i++;
+        tmp = list_entry(p, struct dentry, d_u.d_child);
+        printk("......child: %s\n", tmp->d_name.name);
+        filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
+        file->f_pos++;
     }
 
     // return dcache_readdir(file, dirent, filldir);
@@ -310,7 +287,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     //         break;
     //     }
     // };
-	return ret_num;
+    _leave("");
+	return 0;
 }
 
 
@@ -479,7 +457,6 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     
     _enter("dir=%p, dentry=%s, parent=%s", dir, dentry->d_name.name, dentry->d_parent->d_name.name);
     
-    printk("dir=%p, dentry=%s, parent=%s\n", dir, dentry->d_name.name, dentry->d_parent->d_name.name);
     qdir = qnode_of_inode(dir);
 
     // We're supposed to fill out the dentry. Why is it associated already?
@@ -624,13 +601,12 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     inode = dentry->d_inode;
     generic_fillattr(inode, stat);
 
-    // print stuff
-    // struct list_head *p;
-    // struct dentry *tmp;
-    // list_for_each(p, &dentry->d_subdirs){
-    // 	tmp = list_entry(p, struct dentry, d_u.d_child);
-    // 	printk("......child: %s\n", tmp->d_name.name);
-    // }
+    struct list_head *p;
+    struct dentry *tmp;
+    list_for_each(p, &dentry->d_subdirs){
+    	tmp = list_entry(p, struct dentry, d_u.d_child);
+    	printk("......child: %s\n", tmp->d_name.name);
+    }
 
     // I now think we're not supposed to do this....
     // qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
@@ -837,7 +813,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 		panic("QRPC mount failed!");
 
 	//fill out inodes?
-	printk(KERN_INFO "ROOT INODE INO: 0x%u\n", inode->i_ino);
+	printk(KERN_INFO "ROOT INODE ADDR: 0x%p\n", inode);
 	printk(KERN_INFO "ROOT DENTRY ADDR: 0x%p\n", sb->s_root);
 
 	struct dentry *dentry = sb->s_root;
@@ -849,8 +825,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 
     // TODO: can remove this later
     //lets fill up some stuff...
-
-    // fill in the actual stuff    
+    
     _debug("filling out some inodes");
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;
@@ -884,7 +859,7 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 
         //assign operations
         //TODO base it off if its actually a directory or file
-    	fde->i_fop = &qfs_file_operations;
+    	fde->i_fop = &qfs_dir_operations;
         fde->i_op = &qfs_inode_operations;
 
         //add it to the dcache (also attaches it to dentry)

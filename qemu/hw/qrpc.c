@@ -121,7 +121,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                     continue;
 
 
-                finfo.name_len = sprintf(&finfo.name, "%s", ent->d_name);
+                finfo.name_len = sprintf(&finfo.name, "%s", (char *) ent->d_name);
                 finfo.type = ent->d_type;
                 finfo.mode = st.st_mode;
                 // fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
@@ -292,6 +292,30 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         add_frame_to_buf(s, &frame);
         break;
         }
+    case QRPC_CMD_RMDIR:
+    {
+        //delete a directory
+        printf("Time to unlink");
+        QRPCFrame frame;
+        char path[MAX_PATH_LEN];
+        int ret;
+
+        memset(path, 0, sizeof(char)*MAX_PATH_LEN);
+        sprintf(path, "%s/%s", s->path, s->frame.data);
+        printf("...unlinke path %s\n", path);
+        ret = rmdir(path);
+
+        if (ret < 0){
+            printf("errno = %u (%s)\n", errno, strerror(errno));
+            ret = errno;
+        }
+
+        memcpy(frame.data, &ret, sizeof(int));
+        add_frame_to_buf(s, &frame);
+        printf("deleted %s with return %i\n", path, ret);
+        break;
+
+    }
     default:
         // Silently drop all unknown commands
         break;

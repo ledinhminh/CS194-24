@@ -29,6 +29,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_REVALIDATE 15
 #define QRPC_CMD_RENAME 20
 #define QRPC_CMD_UNLINK 25
+#define QRPC_CMD_RMDIR 23
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -241,7 +242,7 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     
     if (full_path == NULL) {
         // This is root
-        full_path == "/"; // This is on stack...
+        full_path = "/"; // This is on stack...
     }
     
     strcpy(frame.data, full_path);
@@ -257,39 +258,39 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
 
 static int qfs_delete(const struct dentry *dentry) {
     _enter("%s", dentry->d_name.name);
-    // Should run through list and delete
+    printk("....DELETE %s d_count: %i\n", dentry->d_name.name, dentry->d_count);
     _leave("");
     return 0;
 }
 
 static void qfs_release(struct dentry *dentry) {
     _enter("%s", dentry->d_name.name);
+    printk("...dentry: %s, dcount: %i\n", dentry->d_name.name, dentry->d_count);
     _leave("");
     return;
 }
 
 static void qfs_destroy_inode(struct inode *inode) {
-    struct qfs_inode *qnode;
 	_enter("");
     
-    qnode = qnode_of_inode(inode);
+    // qnode = qnode_of_inode(inode);
     // Do we need a lock?
-    kmem_cache_free(qfs_inode_cachep, qnode);
+    // kmem_cache_free(qfs_inode_cachep, qnode);
     
     _leave("");
 	return;
 }
 
-static void qfs_evict_inode(struct inode *inode) {
-    // Please help us, afs_evict_inode
+// static void qfs_evict_inode(struct inode *inode) {
+//     // Please help us, afs_evict_inode
     
-    // _enter("i_ino=%d", inode->i_ino);
+//     // _enter("i_ino=%d", inode->i_ino);
     
-    // Do stuff 
+//     // Do stuff 
     
-    // _leave("");
-	return;
-}
+//     // _leave("");
+// 	return;
+// }
 
 static int qfs_show_options(struct seq_file *file, struct dentry *dentry){
 	printk("QFS SUPER SHOW OPTIONS\n");
@@ -375,7 +376,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
         
         //create a dentry?
-        _debug("%s len=%i", finfo.name, strlen(finfo.name));
+        // _debug("%s len=%i", finfo.name, strlen(finfo.name));
 
         //we don't want blank names...
         if (strcmp(finfo.name, "") == 0){
@@ -415,9 +416,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         //assign mode
         // _debug("assign mode");
         fde->i_mode = finfo.mode;
-        
-        // unlock_new_inode(fde);
-        
+        unlock_new_inode(fde);
         //add it to the dcache (also attaches it to dentry)
         // Calls d_instantiate and d_rehash
         // _debug("add to dentry");
@@ -532,22 +531,21 @@ static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode);
 
 static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
-    int ret;
     _enter("dentry=%s", dentry->d_name.name);
     
     qfs_mknod(dir, dentry, mode | S_IFREG);
-    _leave(" = %d", ret); 
+
+    _leave(""); 
 	return 0;
 }
 
 static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
-    int ret;
     _enter("dentry=%s", dentry->d_name.name);
     
     qfs_mknod(dir, dentry, mode | S_IFDIR);
     inc_nlink(dir); // What does this do and why do we need it?
     
-    _leave(" = %d", ret); 
+    _leave(""); 
 	return 0;
 }
 
@@ -585,6 +583,8 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
         // inode->i_op = &page_symlink_inode_operations;
         break;
     }
+
+    unlock_new_inode(inode);
     
     _debug("inode state: 0x%x", inode->i_state);
     
@@ -635,9 +635,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     struct qrpc_frame frame;
     struct qrpc_file_info finfo;
     struct qfs_inode* qdir;
-    struct inode* inode;
     
-    struct list_head* position;
     struct qfs_inode* entry;
     
     char *path;
@@ -801,7 +799,28 @@ static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *sym
 
 static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 	printk("QFS INODE RMDIR\n");
-	return 0;
+
+    struct qrpc_frame frame;
+    char *path;
+    int ret;
+
+    //delete from host
+    path = get_entire_path(dentry);
+    memcpy(&frame.data, path, sizeof(char)*strlen(path));
+    qtransfer(dir, QRPC_CMD_RMDIR, &frame);
+    memcpy(&ret, &frame.data, sizeof(int));
+
+    printk("...unlink return with %i\n", ret);
+
+    if(ret == 0){
+        d_delete(dentry);
+        printk("...deleted dentry dcount: %i\n", dentry->d_count);
+    } else {
+        printk("...didn't delete dentry\n");
+    }
+    simple_rmdir(dir, dentry);
+
+   	return 0;
 }
 
 static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry) {

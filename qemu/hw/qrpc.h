@@ -11,6 +11,7 @@
 #define QRPC_CMD_RENAME 20
 #define QRPC_CMD_UNLINK 25
 #define QRPC_CMD_STAT 30
+#define QRPC_CMD_RMDIR 23
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1

@@ -118,7 +118,7 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
 }
 
-static int find_in_list(char *name){
+static int find_in_list(char *name) {
     struct qfs_inode* entry;
 
     list_for_each_entry(entry, &list, list) {
@@ -223,11 +223,21 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 // DENTRY OPERATIONS
 static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     struct qrpc_frame frame;
+    char* full_path;
+    
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
     
     frame.cmd = QRPC_CMD_REVALIDATE;
-    strcpy(frame.data, dentry->d_name.name);
+    
+    full_path = get_entire_path(dentry);
+    
+    if (full_path == NULL) {
+        // This is root
+        full_path == "/"; // This is on stack...
+    }
+    
+    strcpy(frame.data, full_path);
     
     // Go to the host every single time.
     qrpc_transfer(dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
@@ -337,10 +347,14 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
     // we need the path from root
     path = get_entire_path(file->f_dentry);
+    
+    _debug("path=%s", path);
     if (path == NULL){
         path = "/";
     }
-    sprintf(frame.data, "%s", path);
+    // sprintf(frame.data, "%s", path);
+    strcpy(frame.data, path);
+    
     // fetch stuff from device 
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;
@@ -585,7 +599,8 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     }
     
     memcpy(frame.data, &mode, sizeof(unsigned short));
-    strcpy(frame.data + sizeof(unsigned short), dentry->d_name.name);
+    
+    strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
     
     // Here we go.
     qtransfer(dir, QRPC_CMD_CREATE, &frame);

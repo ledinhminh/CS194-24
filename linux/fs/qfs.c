@@ -135,34 +135,34 @@ static int find_in_list(char *name) {
     return -1;
 }
 
-static char * get_entire_path(struct dentry *dentry){
-
+static char* get_entire_path(struct dentry *dentry) {
     char *path_tmp;
     char *path;
     int path_len;
+    
+    _enter("dentry=%s", dentry->d_name.name);
 
     path_len = strlen(dentry->d_name.name);
-    path = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
-    sprintf(path, "%s", dentry->d_name.name);
+    path = kstrdup(dentry->d_name.name, GFP_KERNEL);
 
-    printk("adding %s onto path\n", dentry->d_name.name);
+    _debug("adding %s onto path (len=%d)", path, path_len);
     dentry = dentry->d_parent;
 
-    while(dentry != dentry->d_sb->s_root) {
+    while (dentry != dentry->d_sb->s_root) {
 
         path_len += strlen(dentry->d_name.name) + 1;
         path_tmp = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
         memset(path_tmp, 0, sizeof(char) * path_len);
-        sprintf(path_tmp, "%s/%s", dentry->d_name.name, path);
+        snprintf(path_tmp, path_len, "%s/%s", dentry->d_name.name, path);
 
-        printk("adding %s onto path\n", dentry->d_name.name);
+        _debug("adding %s onto path (total len=%d)", dentry->d_name.name, path_len);
         path = path_tmp;
         
         dentry = dentry->d_parent;
-        printk("....current path: %s\n", path);
+        _debug("current path=%s\n", path);
     }
 
-    printk("completed path %s\n", path);
+    _leave(" = %s", path);
     return path;
 }
 

@@ -208,16 +208,53 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         QRPCFrame frame;
         
         // We need the full path.
-        path_size = strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1;
-        path = malloc(path_size * sizeof(char));
+        path = malloc((strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1) * sizeof(char));
         
         sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
         
         ret = access(path, F_OK) != -1 ? 1 : 0;
         
+        free(path);
+        
         memcpy(frame.data, &ret, sizeof(short));
         add_frame_to_buf(s, &frame);
         break;
+        }
+    case QRPC_CMD_RENAME:
+        {
+        int ret;
+        // int old_path_len, new_path_len;
+        char* old_path;
+        char* old_path_abs;
+        char* new_path;
+        char* new_path_abs;
+        QRPCFrame frame;
+        
+        old_path = strdup(s->frame.data);
+        old_path_abs = malloc((strlen(s->path) + strlen(old_path) + 1) * sizeof(char));
+        sprintf(old_path_abs, "%s/%s", s->path, old_path);
+        
+        new_path = strdup(s->frame.data + strlen(old_path) + 1);
+        new_path_abs = malloc((strlen(s->path) + strlen(new_path) + 1) * sizeof(char));
+        sprintf(new_path_abs, "%s/%s", s->path, new_path);
+        
+        ret = rename(old_path_abs, new_path_abs);
+        memcpy(frame.data, &ret, sizeof(int));
+        
+        printf("old path=%s, new path=%s, ret=%u\n", old_path_abs, new_path_abs, ret);
+        
+        // We should probably do some error checking.
+        if (ret == -1) {
+            printf("errno=%u (%s)\n", errno, strerror(errno));
+            ret = -errno;
+        }
+        
+        free(old_path);
+        free(old_path_abs);
+        free(new_path);
+        free(new_path_abs);
+        
+        add_frame_to_buf(s, &frame);
         }
     default:
         // Silently drop all unknown commands

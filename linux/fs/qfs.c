@@ -27,6 +27,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_CREATE 4
 #define QRPC_CMD_CONTINUE 9
 #define QRPC_CMD_REVALIDATE 15
+#define QRPC_CMD_RENAME 20
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -211,8 +212,14 @@ static void qfs_destroy_inode(struct inode *inode) {
 	return;
 }
 
-static void qfs_evict_inode(struct inode *inode){
-	printk("QFS SUPER EVICT INODE\n");
+static void qfs_evict_inode(struct inode *inode) {
+    // Please help us, afs_evict_inode
+    
+    // _enter("i_ino=%d", inode->i_ino);
+    
+    // Do stuff 
+    
+    // _leave("");
 	return;
 }
 
@@ -607,8 +614,54 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 }
 
 static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry) {
-	printk("QFS INODE RENAME\n");
-	return 0;
+    // 0 - success, everything else - -ESOMETHING
+    int old_path_len, new_path_len, remote_ret;
+    char* old_path;
+    char* new_path;
+    struct qrpc_frame frame;
+    
+    _enter("old=%s, new=%s", old_dentry->d_name.name, new_dentry->d_name.name);
+    
+    // Always returns 0
+    simple_rename(old_dir, old_dentry, new_dir, new_dentry);
+    
+    // Synthesize the paths.
+    
+    old_path = kstrdup(old_dentry->d_name.name, GFP_KERNEL);
+    old_path_len = old_dentry->d_name.len;
+    old_dentry = old_dentry->d_sb->s_root;
+
+    new_path = kstrdup(new_dentry->d_name.name, GFP_KERNEL);
+    new_path_len = new_dentry->d_name.len;
+    new_dentry = new_dentry->d_sb->s_root;
+    
+    // Untested for now!
+    while(old_dentry != old_dentry->d_sb->s_root) {
+        char* old_path_tmp;
+        
+        _debug("this dentry is %s", old_dentry->d_name.name);
+        old_path_len += old_dentry->d_name.len;
+        
+        old_path_tmp = kmalloc(sizeof(char) * old_path_len, GFP_KERNEL);
+        snprintf(old_path_tmp, old_path_len, "%s/%s", old_dentry->d_name.name, old_path);
+        old_path = old_path_tmp;
+        // Memory leak in old_path
+        
+        old_dentry = old_dentry->d_sb->s_root;
+    }
+    
+    // Tell the host.
+    _debug("synthesized old path=%s, new path=%s", old_path, new_path);
+    
+    strcpy(frame.data, old_path);
+    strcpy(frame.data + old_path_len + 1, new_path);
+    
+    qtransfer(old_dir, QRPC_CMD_RENAME, &frame);
+    
+    memcpy(&remote_ret, frame.data, sizeof(int));
+    
+    _leave(" = %d", remote_ret);
+	return remote_ret;
 }
 
 // static int qfs_permission(struct inode *inode, int mask){

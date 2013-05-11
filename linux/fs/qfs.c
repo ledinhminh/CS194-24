@@ -183,20 +183,22 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     // Go to the host every single time.
     qrpc_transfer(dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
     
-    _debug("exists: %u", frame.data[0]); 
-   
+    // _debug("exists: %u", frame.data[0]); 
     
-    _leave(" = 1 [ok]");
-    return 1;
+    _leave(" = %d [0 = bad, 1 = ok]", frame.data[0]);
+    return frame.data[0];
 }
 
-static int qfs_delete(const struct dentry *dentry){
-    printk("QFS DENTRY DELETE\n---dentry: 0x%p\n", dentry);
+static int qfs_delete(const struct dentry *dentry) {
+    _enter("%s", dentry->d_name.name);
+    // Should run through list and delete
+    _leave("");
     return 0;
 }
 
-static void qfs_release(struct dentry *dentry){
-    printk("QFS DENTRY RELEASE\n---dentry: 0x%p\n", dentry);
+static void qfs_release(struct dentry *dentry) {
+    _enter("%s", dentry->d_name.name);
+    _leave("");
     return;
 }
 
@@ -244,23 +246,13 @@ static int qfs_dir_open(struct inode *inode, struct file *file){
 static int qfs_dir_release(struct inode *inode, struct file *file){
 	//called when last remaining reference to file is destroyed
 	//reference counting? (decrement)
-	printk("QFS DIR RELEASE\n");
+    _enter("");
+    _leave("");
 	return 0;
 }
 
-static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
-	//returns next directory in a directory listing. function called by readdir() system call.
-	// printk("QFS DIR READDIR\n");
-	// printk("FILE PATH: %s\n", file->f_dentry->d_name.name);
-
-	// struct dentry *dentry = file->f_path.dentry;
- //    ino_t ino = dentry->d_inode->i_ino;
- //    int i = file->f_pos;
- //    if (filldir(dirent, "..", 2, i, ino, S_IFDIR) < 0){
- //        printk("bad filldir\n");
- //    }
- //    file->f_pos++;
- //    i++;
+static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
+	// Returns next directory in a directory listing. function called by readdir() system call.
 
     struct list_head *p;
     struct dentry *tmp;
@@ -268,15 +260,15 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     unsigned f_pos = file->f_pos;
     int ret_num = 0;
 
+    _enter("");
 
-    printk("READDIR()\n");
-    if (f_pos == 0){
+    if (f_pos == 0) {
         printk("...creating the (dot) directory\n");
         filldir(dirent, ".", 1, f_pos, inode->i_ino, DT_DIR);
         file->f_pos = f_pos = 1;
         ret_num++;
     }
-    if (f_pos == 1){
+    if (f_pos == 1) {
         printk("...creating the (dot dot) directory\n");
         filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, DT_DIR);
         file->f_pos = f_pos = 2;
@@ -351,10 +343,8 @@ static loff_t qfs_dir_llseek(struct file *file, loff_t offset, int origin){
 }
 
 //FILE FILE OPERATIONS
-static int qfs_file_open(struct inode *inode, struct file *file){
-	printk("file: %s\n", file->f_path.dentry->d_name.name);
-	//creates a new file object and links it to the corresponding indoe object.
-	printk("QFS FILE OPEN\n");
+static int qfs_file_open(struct inode *inode, struct file *file) {
+	_enter("file=%s", file->f_path.dentry->d_name.name);
 	return 0;
 }
 
@@ -403,20 +393,40 @@ static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 	return 0;
 }
 
-// INODE OPERATIONS
+// Modelled after ramfs
+
+static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode);
+
 static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
-    struct qrpc_frame frame;
-    int backing_fd = 0;
-    struct inode* inode;
-    struct qfs_inode* qnode;
+    int ret;
+    _enter("dentry=%s", dentry->d_name.name);
     
-    _enter("");
+    qfs_mknod(dir, dentry, mode | S_IFREG);
+    _leave(" = %d", ret); 
+	return 0;
+}
+
+static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
+    int ret;
+    _enter("dentry=%s", dentry->d_name.name);
+    
+    qfs_mknod(dir, dentry, mode | S_IFDIR);
+    inc_nlink(dir); // What does this do and why do we need it?
+    
+    _leave(" = %d", ret); 
+	return 0;
+}
+
+static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
+    struct inode *inode;
+    struct qfs_inode *qnode;
+    struct qrpc_frame frame;
+    int backing_fd;
+    
+    _enter("dentry=%s, mode=0x%x", dentry->d_name.name, mode);
     
     // Make a new inode for this file.
-    inode = new_inode(dir->i_sb);
-    // inode = qfs_alloc_inode(dir->i_sb);
-    // if (!inode) // Why would this happen?
-        
+    inode = new_inode(dir->i_sb);        
     qnode = qnode_of_inode(inode);
     
     // Some inode bookkeeping. From ramfs_get_inode
@@ -426,16 +436,13 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     
     inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
     switch (mode & S_IFMT) {
-    // default:
-        // init_special_inode(inode, mode, dev);
-        // break;
     case S_IFREG:
         inode->i_op = &qfs_inode_operations;
         inode->i_fop = &qfs_file_operations;
         break;
     case S_IFDIR:
         inode->i_op = &qfs_inode_operations;
-        inode->i_fop = &qfs_file_operations;
+        inode->i_fop = &qfs_dir_operations;
 
         /* directory inodes start off with i_nlink == 2 (for "." entry) */
         inc_nlink(inode);
@@ -445,11 +452,8 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
         break;
     }
     
-    
-    // TODO: Case and assign file_operations.
-    
-    memcpy(frame.data, &mode, sizeof(short));
-    strcpy(frame.data + sizeof(short), dentry->d_name.name);
+    memcpy(frame.data, &mode, sizeof(unsigned short));
+    strcpy(frame.data + sizeof(unsigned short), dentry->d_name.name);
     
     // Here we go.
     qtransfer(dir, QRPC_CMD_CREATE, &frame);
@@ -458,7 +462,7 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     // TODO: Do some error checking here
     
     // Add the fd to the qnode's info
-    _debug("qfs_create: backing fd=%d", backing_fd);
+    _debug("backing fd=%d", backing_fd);
     qnode->backing_fd = backing_fd;
     
     // I think we have to do this. From ramfs_mknod
@@ -466,8 +470,7 @@ static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bo
     dget(dentry);
     
     _leave("");
-    return 0;
-}
+}    
 
 static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
     // Love: This function searches a directory for an inode corresponding to a filename specified in the given dentry.
@@ -603,11 +606,6 @@ static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *sym
 	return 0;
 }
 
-static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode){
-	printk("QFS INODE MKDIR\n");
-	return 0;
-}
-
 static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 	printk("QFS INODE RMDIR\n");
 	return 0;
@@ -671,68 +669,26 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
 // }
 
 static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat) {
-    //invoked by VFS when it notices an inode needs to be refreshed from disk
-    // struct qrpc_frame frame;
-    // struct qrpc_file_info finfo;
-    // int done;
-
-    // printk("QFS INODE GETATTR\n---vfsmount: 0x%p\n---dentry: 0x%p\n---stat: 0x%p\n",
-    //        mnt, dentry, stat);
-    // printk("-inode name: %s\n", dentry->d_name.name);
-    // printk("-inode addr: 0x%p\n", dentry->d_inode);
-
-    //as copied from afs...
-    _enter("");
+    // Invoked by VFS when it notices an inode needs to be refreshed from disk
+    // as copied from afs...
     
-    printk("QFS INODE GETATTR\n");
-    printk("...name: %s\n", dentry->d_name.name);
-    printk("...dev: %lu\n", stat->dev);
-    printk("...ino: %lu\n", stat->ino);
-    printk("...mode: %lu\n", stat->mode);
     struct inode *inode;
+    struct list_head *p;
+    struct dentry *tmp;
+    
+    _enter("dentry=%s", dentry->d_name.name);
+
     inode = dentry->d_inode;
     generic_fillattr(inode, stat);
 
-    struct list_head *p;
-    struct dentry *tmp;
-    list_for_each(p, &dentry->d_subdirs){
+    list_for_each(p, &dentry->d_subdirs) {
     	tmp = list_entry(p, struct dentry, d_u.d_child);
-    	printk("......child: %s\n", tmp->d_name.name);
+    	// _debug("......child: %s", tmp->d_name.name);
     }
-
-    // I now think we're not supposed to do this....
-    // qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
-    // done = 0;
-    // while (!done){
-    //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
-        
-    //     //create a dentry?
-    //     printk("%s len=%i\n", finfo.name, strlen(finfo.name));
-    //     struct qstr *name = kmalloc(sizeof(struct qstr), GFP_KERNEL);
-    //     char *fname = kmalloc(sizeof(char) * strlen(finfo.name), GFP_KERNEL);
-    //     memset(fname, 0, sizeof(char)*strlen(finfo.name));
-    //     memcpy(fname, &finfo.name, sizeof(char)*strlen(finfo.name));
-    //     name->name = fname;
-    //     printk("fname: %s\n", name->name);
-    //     struct dentry *child = d_alloc(dentry, name);
-    //     if (child == NULL){
-    //         printk("BAD HAPPENED\n");
-    //         break;
-    //     }
-
-
-    //     // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
-    //     if (frame.ret == QRPC_RET_OK){
-    //         done = 1;
-    //     } else if (frame.ret == QRPC_RET_CONTINUE) {
-    //         qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
-    //     } else {
-    //         break;
-    //     }
-    // }
-    return 0;
     
-    _leave("");
+    _leave(" = 0");
+
+    return 0;
 }
 
 static int qfs_setattr(struct dentry *dentry, struct iattr *attr){

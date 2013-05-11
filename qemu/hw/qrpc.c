@@ -178,9 +178,11 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         break;
         }
     case QRPC_CMD_CREATE:
+        // Handle for both create and mkdir via mknod
         {
-        mode_t mode;
-        int fd, path_size;
+        unsigned short mode;
+        int path_size;
+        int fd = -1;
         char* path;
         QRPCFrame frame;
         
@@ -192,8 +194,20 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         
         sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
         
-        fd = creat(path, mode);
+        // We should not have to do this!
+        if ((mode & S_IFREG) == S_IFREG)
+            fd = creat(path, mode);
+        else if ((mode & S_IFDIR) == S_IFDIR)
+            fd = mkdir(path, mode); // One doesn't open a directory.
+        else
+            printf("mknod: invalid mode bits\n");
+
         printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
+        
+        if (fd == -1) {
+            printf("errno=%u (%s)\n", errno, strerror(errno));
+            fd = -errno;
+        }
         
         memcpy(frame.data, &fd, sizeof(int));
         add_frame_to_buf(s, &frame);
@@ -208,11 +222,13 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         QRPCFrame frame;
         
         // We need the full path.
-        path = malloc((strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1) * sizeof(char));
+        path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
         
-        sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
+        sprintf(path, "%s/%s", s->path, s->frame.data);
         
         ret = access(path, F_OK) != -1 ? 1 : 0;
+        
+        printf("revalidate: %s is %d (0 = bad, 1 = ok)\n", path, ret);
         
         free(path);
         
@@ -255,6 +271,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         free(new_path_abs);
         
         add_frame_to_buf(s, &frame);
+        break;
         }
     default:
         // Silently drop all unknown commands

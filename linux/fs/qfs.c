@@ -28,6 +28,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_CONTINUE 9
 #define QRPC_CMD_REVALIDATE 15
 #define QRPC_CMD_RENAME 20
+#define QRPC_CMD_UNLINK 25
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -96,7 +97,7 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 	
     struct block_device *bdev;
     
-    _enter("");
+    // _enter("");
 
 	// from the inode, get the superblock, then the block dev
 	bdev = inode->i_sb->s_bdev;
@@ -104,7 +105,7 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 	f->ret = QRPC_RET_ERR;
 	qrpc_transfer(bdev, f, sizeof(struct qrpc_frame));
     
-    _leave("");
+    // _leave("");
 }
 
 //looking for an dentry, given a name and root inode...
@@ -144,6 +145,12 @@ static char* get_entire_path(struct dentry *dentry) {
 
     path_len = strlen(dentry->d_name.name);
     path = kstrdup(dentry->d_name.name, GFP_KERNEL);
+    
+    // Did it fail?
+    if (!kstrdup) {
+        _debug("what the fuck? kstrdup failed");
+        return NULL;
+    }
 
     _debug("adding %s onto path (len=%d)", path, path_len);
     dentry = dentry->d_parent;
@@ -408,26 +415,32 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         //assign mode
         // _debug("assign mode");
         fde->i_mode = finfo.mode;
-
+        
+        // unlock_new_inode(fde);
+        
         //add it to the dcache (also attaches it to dentry)
         // Calls d_instantiate and d_rehash
         // _debug("add to dentry");
         d_add(dentry, fde);
+        dget(dentry);
 
         // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
         out:
         if (frame.ret == QRPC_RET_CONTINUE)
             qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
     }
+    
+    _debug("done transferring, thanks");
 
     //we can check f_pos to see where we left off
     unsigned ino;
     int i = 0; //we're gonna assume the order doesn't change....
     
     list_for_each(p, &file->f_dentry->d_subdirs) {
-
+        _debug("entered for each");
         if ((i+3) > f_pos){
             tmp = list_entry(p, struct dentry, d_u.d_child);
+            _debug("tmp: %p", tmp);
             printk("......filldir: %s\n", tmp->d_name.name);
             ino = tmp->d_inode->i_ino;
             filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, tmp->d_inode->i_mode);
@@ -573,6 +586,8 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
         break;
     }
     
+    _debug("inode state: 0x%x", inode->i_state);
+    
     memcpy(frame.data, &mode, sizeof(unsigned short));
     
     strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
@@ -590,7 +605,7 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     // I think we have to do this. From ramfs_mknod
     d_add(dentry, inode);
     // d_instantiate(dentry, inode);
-    // dget(dentry);
+    dget(dentry);
     
     _leave("");
 }    
@@ -625,6 +640,8 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     struct list_head* position;
     struct qfs_inode* entry;
     
+    char *path;
+    
     int done;
     
     _enter("dir=%p, dentry=%s, parent=%s", dir, dentry->d_name.name, dentry->d_parent->d_name.name);
@@ -651,19 +668,27 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
             if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
                 _debug("found matching filename in inode list, instantiating dentry");
                 _debug("i_ino=%lu", entry->inode.i_ino);
-               
-                d_add(dentry, inode); 
-                // d_instantiate(dentry, inode);
-                // dget(dentry);
-                _leave(" = %p", dentry);
-                return dentry;
-            
+                
+                d_add(dentry, inode);
+                dget(dentry);
+                _leave(" = NULL");
+                return NULL;
             }
         }
     }
     
     // We don't have it. Go to the host and see if it really exists. If it does, allocate an inode for it.
     _debug("not in list, doing transfer");
+    
+        // we need the path from root
+    path = get_entire_path(dentry);
+    
+    _debug("path=%s", path);
+    if (path == NULL){
+        path = "/";
+    }
+    // sprintf(frame.data, "%s", path);
+    strcpy(frame.data, path);
     
     qtransfer(dir, QRPC_CMD_OPENDIR, &frame);
     done = 0;
@@ -678,6 +703,8 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
         
         if (strcmp(finfo.name, dentry->d_name.name) == 0) {
             _debug("found matching filename %s\n", finfo.name);
+            
+            qfs_mknod(dir, dentry, finfo.mode);
             // Do more stuff here!!
         }
 
@@ -720,9 +747,51 @@ static int qfs_link(struct dentry *old_dentry, struct inode *indoe, struct dentr
 	return 0;
 }
 
-static int qfs_unlink(struct inode *dir, struct dentry *dentry){
-	printk("QFS INDOE UNLINK\n");
-	return 0;
+static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
+    char* full_path;
+    struct qrpc_frame frame;
+    int remote_ret;
+    struct qfs_inode *entry;
+    struct list_head *list_head;
+    struct list_head *tmp;
+    
+    _enter("%s", dentry->d_name.name);
+    
+    _debug("inode state 0x%x", dentry->d_inode->i_state);
+    
+    _debug("sending to host");
+    full_path = get_entire_path(dentry);
+    strcpy(frame.data, full_path);
+    qtransfer(dir, QRPC_CMD_UNLINK, &frame);
+    memcpy(&remote_ret, frame.data, sizeof(int));
+    
+    // Take out of list
+    
+    _debug("deleting from inode list");
+    list_for_each_safe(list_head, tmp, &list) {
+        struct hlist_node *node; /* Miscellaneous crap needed for hlists. */
+        struct hlist_node *tmp;
+        struct dentry* loop_dentry;
+        
+        entry = list_entry(&list, struct qfs_inode, list);
+        
+        hlist_for_each_entry_safe(loop_dentry, node, tmp, &(entry->inode.i_dentry), d_alias) {
+            if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
+                _debug("found it, deleting...");
+                list_del(entry);
+            }
+        }
+    }
+    
+    _debug("simple unlink");
+    d_invalidate(dentry);
+    simple_unlink(dir, dentry);
+    
+    _debug("inode state 0x%x", dentry->d_inode->i_state);
+    _debug("dentry count %d", dentry->d_count);
+    
+    _leave(" = %d", remote_ret);
+	return remote_ret;
 }
 
 static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname){
@@ -737,7 +806,7 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
 static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry) {
     // 0 - success, everything else - -ESOMETHING
-    int old_path_len, new_path_len, remote_ret;
+    int remote_ret;
     char* old_path;
     char* new_path;
     struct qrpc_frame frame;
@@ -749,34 +818,14 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
     
     // Synthesize the paths.
     
-    old_path = kstrdup(old_dentry->d_name.name, GFP_KERNEL);
-    old_path_len = old_dentry->d_name.len;
-    old_dentry = old_dentry->d_sb->s_root;
-
-    new_path = kstrdup(new_dentry->d_name.name, GFP_KERNEL);
-    new_path_len = new_dentry->d_name.len;
-    new_dentry = new_dentry->d_sb->s_root;
-    
-    // Untested for now!
-    while(old_dentry != old_dentry->d_sb->s_root) {
-        char* old_path_tmp;
-        
-        _debug("this dentry is %s", old_dentry->d_name.name);
-        old_path_len += old_dentry->d_name.len;
-        
-        old_path_tmp = kmalloc(sizeof(char) * old_path_len, GFP_KERNEL);
-        snprintf(old_path_tmp, old_path_len, "%s/%s", old_dentry->d_name.name, old_path);
-        old_path = old_path_tmp;
-        // Memory leak in old_path
-        
-        old_dentry = old_dentry->d_sb->s_root;
-    }
+    old_path = get_entire_path(old_dentry);
+    new_path = get_entire_path(new_dentry);
     
     // Tell the host.
     _debug("synthesized old path=%s, new path=%s", old_path, new_path);
     
     strcpy(frame.data, old_path);
-    strcpy(frame.data + old_path_len + 1, new_path);
+    strcpy(frame.data + strlen(old_path) + 1, new_path);
     
     qtransfer(old_dir, QRPC_CMD_RENAME, &frame);
     
@@ -840,13 +889,13 @@ static const struct super_operations qfs_super_ops = {
     .alloc_inode   = qfs_alloc_inode,
     // .drop_inode	   = NULL,
 	.destroy_inode = qfs_destroy_inode,
-	.evict_inode   = qfs_evict_inode,
+	// .evict_inode   = qfs_evict_inode,
 	.show_options  = qfs_show_options, //maybe generic_show_options is good enough?
 };
 
 const struct dentry_operations qfs_dentry_operations = {
 	.d_revalidate = qfs_revalidate,
-	.d_delete	  = qfs_delete,
+	// .d_delete	  = qfs_delete,
 	.d_release	  = qfs_release,
 	.d_automount  = qfs_automount,
 };
@@ -886,6 +935,7 @@ const struct inode_operations qfs_inode_operations = {
 	// .permission = NULL, //we could use our qfs_permission... but theres a generic
 	.getattr    = qfs_getattr,
 	.setattr    = qfs_setattr,
+    .mknod      = qfs_mknod,
 };
 
 // An extra structure we can tag into the superblock, currently not

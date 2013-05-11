@@ -197,11 +197,11 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         {
         int path_size;
         short ret;
-        char path[MAX_PATH_LEN];
+        char* path;
         QRPCFrame frame;
         
         // We need the full path.
-        // path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
+        path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
         
         sprintf(path, "%s/%s", s->path, s->frame.data);
         
@@ -248,6 +248,46 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         free(old_path_abs);
         free(new_path);
         free(new_path_abs);
+        
+        add_frame_to_buf(s, &frame);
+        break;
+        }
+    case QRPC_CMD_UNLINK:
+        {
+        int ret;
+        char* path;
+        QRPCFrame frame;
+        
+        path = malloc(strlen(s->path) + strlen(s->frame.data) + 1 * sizeof(char));
+        sprintf(path, "%s/%s", s->path, s->frame.data);
+        
+        printf("unlink: %s\n", path);
+        ret = unlink(path);
+        
+        if (ret == -1) {
+            printf("errno=%u (%s)\n", errno, strerror(errno));
+            ret = -errno;
+        }
+        
+        memcpy(frame.data, &ret, sizeof(int));
+        add_frame_to_buf(s, &frame);
+        break;
+        }
+    case QRPC_CMD_STAT:
+        {
+        // Worst stat I've ever seen.
+        
+        
+        struct stat st;
+        int ret;
+        char *full_path;
+        
+        full_path = strdup(s->frame.data);
+
+        ret = stat(full_path, &st);
+        
+        QRPCFrame frame;
+        memcpy(frame.data, &st.st_mode, sizeof(mode_t));
         
         add_frame_to_buf(s, &frame);
         break;

@@ -93,7 +93,12 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         struct stat st;
         DIR *dir;
         int ret;
-        if ((dir = opendir(s->path)) != NULL){
+
+        int path_size = strlen(s->path) + strlen(s->frame.data) + 1;
+        char *path = malloc(sizeof(char) * path_size);
+        sprintf(path, "%s/%s", s->path, s->frame.data);
+        fprintf(stderr, "openddir path: %s\n", path);
+        if ((dir = opendir(path)) != NULL){
             while ((ent = readdir(dir)) != NULL){
 
                 //lets not pass this stuff
@@ -103,45 +108,18 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 if(strcmp(ent->d_name, "..") == 0)
                     continue;
 
-                int size = strlen(s->path) + strlen(ent->d_name);
+                int size = strlen(path) + strlen(ent->d_name);
                 char full_path[size+1];
                 struct qrpc_file_info finfo;
 
-                sprintf(full_path, "%s/%s", s->path, ent->d_name);
+                sprintf(full_path, "%s/%s", path, ent->d_name);
+                fprintf(stderr, "...stat path: %s\n", full_path);
                 ret = stat(full_path, &st);
 
                 //if we can't stat the file, we probably shouldn't keep going
                 if (ret == -1)
                     continue;
-                // lots of printing
-                // fprintf(stderr, "file: %s \n", full_path);
-                // switch(ent->d_type){
-                //     case DT_UNKNOWN:
-                //         fprintf(stderr, "\ntype: unkown\n");
-                //         break;
-                //     case DT_REG:
-                //         fprintf(stderr, "\ttype: regular\n");
-                //         break;
-                //     case DT_DIR:
-                //         fprintf(stderr, "\ttype: directory\n");
-                //         break;
-                //     case DT_FIFO:
-                //         fprintf(stderr, "\ttype: fifo\n");
-                //         break;
-                //     case DT_SOCK:
-                //         fprintf(stderr, "\ttype: socket\n");
-                //         break;
-                //     case DT_CHR:
-                //         fprintf(stderr, "\ttype: character device\n");
-                //         break;
-                //     default:
-                //         break;
-                // }
-                // if(ret == -1){
-                //     fprintf(stderr, "\tcouldn't stat\n");
-                // } else {
-                //     fprintf(stderr, "\tmode_t:%lu\n", st.st_mode);
-                // }
+
 
                 finfo.name_len = sprintf(&finfo.name, "%s", ent->d_name);
                 finfo.type = ent->d_type;
@@ -156,6 +134,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 frame.ret = QRPC_RET_CONTINUE;
 
                 add_frame_to_buf(s, &frame);
+                fprintf(stderr, "..Added %s to buffer\n", finfo.name);
             }
             closedir(dir);
         }else {

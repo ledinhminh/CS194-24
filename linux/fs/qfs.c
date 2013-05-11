@@ -428,9 +428,9 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
         if ((i+3) > f_pos){
             tmp = list_entry(p, struct dentry, d_u.d_child);
-            // printk("......filldir: %s\n", tmp->d_name.name);
+            printk("......filldir: %s\n", tmp->d_name.name);
             ino = tmp->d_inode->i_ino;
-            filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
+            filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, tmp->d_inode->i_mode);
             file->f_pos++;
             f_pos++;
             ret_num++;
@@ -588,8 +588,9 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     qnode->backing_fd = backing_fd;
     
     // I think we have to do this. From ramfs_mknod
-    d_instantiate(dentry, inode);
-    dget(dentry);
+    d_add(dentry, inode);
+    // d_instantiate(dentry, inode);
+    // dget(dentry);
     
     _leave("");
 }    
@@ -650,9 +651,10 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
             if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
                 _debug("found matching filename in inode list, instantiating dentry");
                 _debug("i_ino=%lu", entry->inode.i_ino);
-                
-                d_instantiate(dentry, inode);
-                dget(dentry);
+               
+                d_add(dentry, inode); 
+                // d_instantiate(dentry, inode);
+                // dget(dentry);
                 _leave(" = %p", dentry);
                 return dentry;
             

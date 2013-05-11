@@ -16,6 +16,7 @@
 
 #define QRPC_DATA_SIZE 1024
 #define QRPC_BUFFER_LEN 256
+#define MAX_PATH_LEN 1024
 
 
 struct qrpc_file_info {

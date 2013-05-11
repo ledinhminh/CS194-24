@@ -119,11 +119,9 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
 }
 
 static int find_in_list(char *name){
-    struct list_head* position;
     struct qfs_inode* entry;
 
     list_for_each_entry(entry, &list, list) {
-        struct inode* inode;
         struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
         struct dentry* loop_dentry;
         
@@ -137,6 +135,36 @@ static int find_in_list(char *name){
     return -1;
 }
 
+static char * get_entire_path(struct dentry *dentry){
+
+    char *path_tmp;
+    char *path;
+    int path_len;
+
+    path_len = strlen(dentry->d_name.name);
+    path = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
+    sprintf(path, "%s", dentry->d_name.name);
+
+    printk("adding %s onto path\n", dentry->d_name.name);
+    dentry = dentry->d_parent;
+
+    while(dentry != dentry->d_sb->s_root) {
+
+        path_len += strlen(dentry->d_name.name) + 1;
+        path_tmp = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
+        memset(path_tmp, 0, sizeof(char) * path_len);
+        sprintf(path_tmp, "%s/%s", dentry->d_name.name, path);
+
+        printk("adding %s onto path\n", dentry->d_name.name);
+        path = path_tmp;
+        
+        dentry = dentry->d_parent;
+        printk("....current path: %s\n", path);
+    }
+
+    printk("completed path %s\n", path);
+    return path;
+}
 
 //for the kmemcache which is a slab allocator. So it'll make a bunch of
 //these at the start
@@ -197,8 +225,6 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     struct qrpc_frame frame;
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
-<<<<<<< HEAD
-    
     
     frame.cmd = QRPC_CMD_REVALIDATE;
     strcpy(frame.data, dentry->d_name.name);
@@ -210,9 +236,6 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
    
     
     _leave(" = 1 [ok]");
-=======
-    _leave("");
->>>>>>> still working on showing directories
     return 1;
 }
 
@@ -309,9 +332,14 @@ static int qfs_dir_readdir(struct file *file, void *dirent , filldir_t filldir){
     struct qrpc_frame frame;
     struct qrpc_file_info finfo;
     int done;
+    char *path;
 
     // we need the path from root
-    sprintf(frame.data, "%s", file->f_path->);
+    path = get_entire_path(file->f_dentry);
+    if (path == NULL){
+        path = "/";
+    }
+    sprintf(frame.data, "%s", path);
     // fetch stuff from device 
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;

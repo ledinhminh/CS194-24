@@ -193,8 +193,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         
         ret = access(path, F_OK) != -1 ? 1 : 0;
         
-        free(path);
-        
         memcpy(frame.data, &ret, sizeof(short));
         add_frame_to_buf(s, &frame);
         break;

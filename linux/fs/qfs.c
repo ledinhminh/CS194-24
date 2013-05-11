@@ -88,6 +88,9 @@ struct qfs_inode head;
 #define _leave(FMT,...) kleave(FMT,##__VA_ARGS__)
 #define _debug(FMT,...) kdebug(FMT,##__VA_ARGS__)
 
+
+static struct inode *qfs_make_inode(struct super_block *sb, int mode);
+
 //because getting the block device SUCKS~!!!
 static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 	
@@ -115,6 +118,53 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
 }
 
+static int find_in_list(char *name){
+    struct qfs_inode* entry;
+
+    list_for_each_entry(entry, &list, list) {
+        struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
+        struct dentry* loop_dentry;
+        
+        hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
+            
+            if (strcmp(name, loop_dentry->d_name.name) == 0) {
+                return 0;
+            }
+        }
+    }
+    return -1;
+}
+
+static char * get_entire_path(struct dentry *dentry){
+
+    char *path_tmp;
+    char *path;
+    int path_len;
+
+    path_len = strlen(dentry->d_name.name);
+    path = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
+    sprintf(path, "%s", dentry->d_name.name);
+
+    printk("adding %s onto path\n", dentry->d_name.name);
+    dentry = dentry->d_parent;
+
+    while(dentry != dentry->d_sb->s_root) {
+
+        path_len += strlen(dentry->d_name.name) + 1;
+        path_tmp = kmalloc(sizeof(char) * path_len, GFP_KERNEL);
+        memset(path_tmp, 0, sizeof(char) * path_len);
+        sprintf(path_tmp, "%s/%s", dentry->d_name.name, path);
+
+        printk("adding %s onto path\n", dentry->d_name.name);
+        path = path_tmp;
+        
+        dentry = dentry->d_parent;
+        printk("....current path: %s\n", path);
+    }
+
+    printk("completed path %s\n", path);
+    return path;
+}
 
 //for the kmemcache which is a slab allocator. So it'll make a bunch of
 //these at the start
@@ -175,7 +225,6 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     struct qrpc_frame frame;
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
-    
     
     frame.cmd = QRPC_CMD_REVALIDATE;
     strcpy(frame.data, dentry->d_name.name);
@@ -262,7 +311,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
     _enter("");
 
-    if (f_pos == 0) {
+    _debug("f_pos=%d", f_pos);
+    if (f_pos == 0){
         printk("...creating the (dot) directory\n");
         filldir(dirent, ".", 1, f_pos, inode->i_ino, DT_DIR);
         file->f_pos = f_pos = 1;
@@ -275,6 +325,87 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         ret_num++;
     }
 
+
+    struct super_block *sb = file->f_dentry->d_sb;
+    struct dentry *dentry = file->f_dentry;
+    struct qstr qname;
+    struct inode *fde;
+    struct qrpc_frame frame;
+    struct qrpc_file_info finfo;
+    int done;
+    char *path;
+
+    // we need the path from root
+    path = get_entire_path(file->f_dentry);
+    if (path == NULL){
+        path = "/";
+    }
+    sprintf(frame.data, "%s", path);
+    // fetch stuff from device 
+    qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
+    done = 0;
+    while (!done) {
+        //don't do another loop if we're done
+        if (frame.ret == QRPC_RET_OK){
+            // printk("...got a done...\n");
+            done = 1;
+        }
+
+        memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
+        
+        //create a dentry?
+        _debug("%s len=%i", finfo.name, strlen(finfo.name));
+
+        //we don't want blank names...
+        if (strcmp(finfo.name, "") == 0){
+            printk("...found a blank name\n");
+            continue;
+        }
+
+        if (find_in_list(finfo.name) == 0){
+            // printk("...found it already name: %s\n", finfo.name);
+            goto out;
+        }
+        // create the qstr
+        // This should not be created on the stack
+        qname.name = finfo.name;
+        qname.len = strlen(finfo.name);
+        qname.hash = full_name_hash(finfo.name, qname.len);
+    
+        //create the dentry 
+        // _debug("creating dentry");
+        dentry = d_alloc(file->f_dentry, &qname);
+
+        //create the inode
+        // _debug("creating inode");
+        fde = qfs_make_inode(sb, DT_DIR | 0644);
+
+        //assign operations
+        // _debug("assign ops");
+        switch(finfo.type){
+            case DT_DIR:
+                fde->i_fop = &qfs_dir_operations;
+                break;
+            default:
+                fde->i_fop = &qfs_file_operations;
+        } 
+        fde->i_op = &qfs_inode_operations;
+
+        //assign mode
+        // _debug("assign mode");
+        fde->i_mode = finfo.mode;
+
+        //add it to the dcache (also attaches it to dentry)
+        // Calls d_instantiate and d_rehash
+        // _debug("add to dentry");
+        d_add(dentry, fde);
+
+        // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+        out:
+        if (frame.ret == QRPC_RET_CONTINUE)
+            qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
+    }
+
     //we can check f_pos to see where we left off
     unsigned ino;
     int i = 0; //we're gonna assume the order doesn't change....
@@ -283,10 +414,11 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
         if ((i+3) > f_pos){
             tmp = list_entry(p, struct dentry, d_u.d_child);
-            printk("......filldir: %s\n", tmp->d_name.name);
+            // printk("......filldir: %s\n", tmp->d_name.name);
             ino = tmp->d_inode->i_ino;
             filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, S_IFREG | 0644);
             file->f_pos++;
+            f_pos++;
             ret_num++;
         }
 
@@ -859,70 +991,6 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	qrpc_transfer(bdev, &f, sizeof(f));
 	if (f.ret != QRPC_RET_OK)
 		panic("QRPC mount failed!");
-
-	//fill out inodes?
-	printk(KERN_INFO "ROOT INODE ADDR: 0x%p\n", inode);
-	printk(KERN_INFO "ROOT DENTRY ADDR: 0x%p\n", sb->s_root);
-
-	struct dentry *dentry = sb->s_root;
-	struct qstr qname;
-	struct inode *fde;
-    struct qrpc_frame frame;
-    int done;
-    struct qrpc_file_info finfo;
-
-    // TODO: can remove this later
-    //lets fill up some stuff...
-    
-    _debug("filling out some inodes");
-    qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
-    done = 0;
-    while (!done) {
-        memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
-        
-        //create a dentry?
-        _debug("%s len=%i", finfo.name, strlen(finfo.name));
-
-        //create the qstr
-        // This should not be created on the stack
-    	qname.name = finfo.name;
-    	qname.len = strlen(finfo.name);
-    	qname.hash = full_name_hash(finfo.name, qname.len);
-    
-        //create the dentry	
-        _debug("creatind dentry");
-        dentry = d_alloc(sb->s_root, &qname);
-    	if (dentry == NULL) {
-    		printk("BAD HAPPENED\n");
-    		panic("Couldn't get a dentry");
-    	}
-
-        //create the inode
-        _debug("creating inode");
-    	fde = qfs_make_inode(sb, DT_DIR | 0644);
-    	if (!fde) {
-    		printk("BAD HAPPENED INODE\n");
-    		panic("Couldn't make inode");
-    	}
-
-        //assign operations
-        //TODO base it off if its actually a directory or file
-    	fde->i_fop = &qfs_dir_operations;
-        fde->i_op = &qfs_inode_operations;
-
-        //add it to the dcache (also attaches it to dentry)
-        // Calls d_instantiate and d_rehash
-    	d_add(dentry, fde);
-
-        // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
-        if (frame.ret == QRPC_RET_OK) {
-            done = 1;
-        } else if (frame.ret == QRPC_RET_CONTINUE) {
-            qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
-        } else {
-            break;
-        }
-    }
 
 	return dget(sb->s_root);
 }

@@ -19,6 +19,7 @@
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
 #define QRPC_RET_CONTINUE 2
+#define MAX_PATH_LEN 1024
 
 #define QRPC_DATA_SIZE 1024
 #define QRPC_BUFFER_LEN 256

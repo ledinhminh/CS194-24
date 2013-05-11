@@ -95,7 +95,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         int ret;
 
         int path_size = strlen(s->path) + strlen(s->frame.data) + 1;
-        char *path = malloc(sizeof(char) * path_size);
+        char *path[MAX_PATH_LEN];
         sprintf(path, "%s/%s", s->path, s->frame.data);
         fprintf(stderr, "openddir path: %s\n", path);
         if ((dir = opendir(path)) != NULL){
@@ -162,17 +162,14 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         unsigned short mode;
         int path_size;
         int fd = -1;
-        char* path;
+        char path[MAX_PATH_LEN]
         QRPCFrame frame;
 
         memcpy(&mode, s->frame.data, sizeof(short));
 
         // We need the full path.
         path_size = strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1;
-        path = malloc(path_size * sizeof(char));
-
         sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
-
         // We should not have to do this!
         if ((mode & S_IFREG) == S_IFREG)
             fd = creat(path, mode);

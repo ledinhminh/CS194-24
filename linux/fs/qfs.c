@@ -150,7 +150,7 @@ static char* get_entire_path(struct dentry *dentry) {
     path = kstrdup(dentry->d_name.name, GFP_KERNEL);
 
     // Did it fail?
-    if (!kstrdup) {
+    if (!path) {
         _debug("what the fuck? kstrdup failed");
         return NULL;
     }
@@ -430,7 +430,6 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     int i = 0; //we're gonna assume the order doesn't change....
 
     list_for_each(p, &file->f_dentry->d_subdirs) {
-        _debug("entered for each");
         if ((i+3) > f_pos){
             tmp = list_entry(p, struct dentry, d_u.d_child);
             _debug("tmp: %p", tmp);
@@ -593,9 +592,9 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     }
 
     unlock_new_inode(inode);
-
-    _debug("inode state: 0x%x", inode->i_state);
-
+    
+    // _debug("inode state: 0x%x", inode->i_state);
+    
     memcpy(frame.data, &mode, sizeof(unsigned short));
 
     strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
@@ -762,9 +761,9 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     struct list_head *tmp;
 
     _enter("%s", dentry->d_name.name);
-
-    _debug("inode state 0x%x", dentry->d_inode->i_state);
-
+    
+    // _debug("inode state 0x%x", dentry->d_inode->i_state);
+    
     _debug("sending to host");
     full_path = get_entire_path(dentry);
     strcpy(frame.data, full_path);
@@ -792,8 +791,8 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     _debug("simple unlink");
     d_invalidate(dentry);
     simple_unlink(dir, dentry);
-
-    _debug("inode state 0x%x", dentry->d_inode->i_state);
+    
+    // _debug("inode state 0x%x", dentry->d_inode->i_state);
     _debug("dentry count %d", dentry->d_count);
 
     _leave(" = %d", remote_ret);
@@ -811,6 +810,7 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
     struct qrpc_frame frame;
     char *path;
     int ret;
+    struct qfs_inode *qnode;
 
     //delete from host
     path = get_entire_path(dentry);
@@ -822,11 +822,17 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
     if(ret == 0){
         d_delete(dentry);
+        d_drop(dentry);
+        simple_rmdir(dir, dentry);
+
+
+        qnode = qnode_of_inode(dentry->d_inode);
+        list_del_rcu(&(qnode->list)); 
+
         printk("...deleted dentry dcount: %i\n", dentry->d_count);
     } else {
         printk("...didn't delete dentry\n");
     }
-    simple_rmdir(dir, dentry);
 
    	return 0;
 }

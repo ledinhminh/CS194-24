@@ -35,7 +35,7 @@ static uint64_t qrpc_read(void *v, hwaddr a, unsigned w)
 
     // ret = ((uint8_t *)(&s->frame))[a];
     QRPCFrame *frame = &(s->buffer[s->buf_read]);
-    ret = ((uint8_t *) frame)[a]; 
+    ret = ((uint8_t *) frame)[a];
     //check to see if we're at the end of the frame
     if (a == (sizeof(QRPCFrame) - 1)){
         s->buf_read += 1;
@@ -151,7 +151,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         // memset(&finfo, 0, sizeof(struct qrpc_file_info));
         // for (i = 0; i < s->buf_size; i++){
         //     frame = (s->buffer)[i];
-        //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info)); 
+        //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
         //     fprintf(stderr, "%s\n", finfo.name);
         // }
         break;
@@ -164,7 +164,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         int fd = -1;
         char* path;
         QRPCFrame frame;
-        
+
         memcpy(&mode, s->frame.data, sizeof(short));
 
         // We need the full path.
@@ -199,10 +199,10 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         short ret;
         char* path;
         QRPCFrame frame;
-        
+
         // We need the full path.
         path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
-        
+
         sprintf(path, "%s/%s", s->path, s->frame.data);
 
         ret = access(path, F_OK) != -1 ? 1 : 0;
@@ -257,18 +257,18 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         int ret;
         char* path;
         QRPCFrame frame;
-        
+
         path = malloc(strlen(s->path) + strlen(s->frame.data) + 1 * sizeof(char));
         sprintf(path, "%s/%s", s->path, s->frame.data);
-        
+
         printf("unlink: %s\n", path);
         ret = unlink(path);
-        
+
         if (ret == -1) {
             printf("errno=%u (%s)\n", errno, strerror(errno));
             ret = -errno;
         }
-        
+
         memcpy(frame.data, &ret, sizeof(int));
         add_frame_to_buf(s, &frame);
         break;
@@ -276,19 +276,19 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     case QRPC_CMD_STAT:
         {
         // Worst stat I've ever seen.
-        
-        
+
+
         struct stat st;
         int ret;
         char *full_path;
-        
+
         full_path = strdup(s->frame.data);
 
         ret = stat(full_path, &st);
-        
+
         QRPCFrame frame;
         memcpy(frame.data, &st.st_mode, sizeof(mode_t));
-        
+
         add_frame_to_buf(s, &frame);
         break;
         }
@@ -333,13 +333,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       free(path_abs);
 
       add_frame_to_buf(s, &frame);
-      break;
-    }
-    case QRPC_CMD_CLOSE_FILE:
-    {
-      fprintf(stderr, "Closing file");
-      s->frame.ret = QRPC_RET_OK;
-
       break;
     }
     default:

@@ -166,13 +166,13 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         QRPCFrame frame;
         
         memcpy(&mode, s->frame.data, sizeof(short));
-        
+
         // We need the full path.
         path_size = strlen(s->path) + strlen(s->frame.data + sizeof(short)) + 1;
         path = malloc(path_size * sizeof(char));
-        
+
         sprintf(path, "%s/%s", s->path, s->frame.data + sizeof(short));
-        
+
         // We should not have to do this!
         if ((mode & S_IFREG) == S_IFREG)
             fd = creat(path, mode);
@@ -182,12 +182,12 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
             printf("mknod: invalid mode bits\n");
 
         printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
-        
+
         if (fd == -1) {
             printf("errno=%u (%s)\n", errno, strerror(errno));
             fd = -errno;
         }
-        
+
         memcpy(frame.data, &fd, sizeof(int));
         add_frame_to_buf(s, &frame);
         break;
@@ -204,13 +204,13 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
         
         sprintf(path, "%s/%s", s->path, s->frame.data);
-        
+
         ret = access(path, F_OK) != -1 ? 1 : 0;
-        
+
         printf("revalidate: %s is %d (0 = bad, 1 = ok)\n", path, ret);
-        
+
         // free(path);
-        
+
         memcpy(frame.data, &ret, sizeof(short));
         add_frame_to_buf(s, &frame);
         break;
@@ -224,31 +224,31 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         char* new_path;
         char* new_path_abs;
         QRPCFrame frame;
-        
+
         old_path = strdup(s->frame.data);
         old_path_abs = malloc((strlen(s->path) + strlen(old_path) + 1) * sizeof(char));
         sprintf(old_path_abs, "%s/%s", s->path, old_path);
-        
+
         new_path = strdup(s->frame.data + strlen(old_path) + 1);
         new_path_abs = malloc((strlen(s->path) + strlen(new_path) + 1) * sizeof(char));
         sprintf(new_path_abs, "%s/%s", s->path, new_path);
-        
+
         ret = rename(old_path_abs, new_path_abs);
         memcpy(frame.data, &ret, sizeof(int));
-        
+
         printf("old path=%s, new path=%s, ret=%u\n", old_path_abs, new_path_abs, ret);
-        
+
         // We should probably do some error checking.
         if (ret == -1) {
             printf("errno=%u (%s)\n", errno, strerror(errno));
             ret = -errno;
         }
-        
+
         free(old_path);
         free(old_path_abs);
         free(new_path);
         free(new_path_abs);
-        
+
         add_frame_to_buf(s, &frame);
         break;
         }
@@ -315,6 +315,32 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         printf("deleted %s with return %i\n", path, ret);
         break;
 
+    }
+    case QRPC_CMD_OPEN_FILE:
+    {
+      const char* path = strdup(s->frame.data);
+      const char* path_abs = malloc((strlen(s->path) + strlen(path) + 1) * sizeof(char));
+      int fd = -1;
+      QRPCFrame frame;
+
+      sprintf(path_abs, "%s/%s", s->path, path);
+      fd = open(path_abs, O_RDWR);
+
+      fprintf(stderr, "Opening file %s: fd = %ld\n", path_abs, fd);
+      memcpy(frame.data, &fd, sizeof(int));
+
+      free(path);
+      free(path_abs);
+
+      add_frame_to_buf(s, &frame);
+      break;
+    }
+    case QRPC_CMD_CLOSE_FILE:
+    {
+      fprintf(stderr, "Closing file");
+      s->frame.ret = QRPC_RET_OK;
+
+      break;
     }
     default:
         // Silently drop all unknown commands
@@ -388,7 +414,7 @@ static void qrpc_class_init(ObjectClass *klass, void *data)
     k->vendor_id = 0xCA1;
     k->device_id = 0xF194;
     k->class_id = PCI_CLASS_NETWORK_ETHERNET;
-    
+
     dc->vmsd = &vmstate_qrpc;
     dc->props = qrpc_properties;
 }

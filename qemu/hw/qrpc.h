@@ -13,6 +13,9 @@
 #define QRPC_CMD_STAT 30
 #define QRPC_CMD_RMDIR 23
 
+#define QRPC_CMD_OPEN_FILE 100
+#define QRPC_CMD_CLOSE_FILE 101
+
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
 #define QRPC_RET_CONTINUE 2

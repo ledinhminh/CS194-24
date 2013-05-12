@@ -426,6 +426,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         switch(finfo.type){
             case DT_DIR:
                 fde->i_fop = &qfs_dir_operations;
+                inc_nlink(fde);
+                inc_nlink(inode);
                 break;
             default:
                 fde->i_fop = &qfs_file_operations;
@@ -602,7 +604,7 @@ static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
 
     ret = qfs_mknod(dir, dentry, mode | S_IFDIR);
 
-    if (ret > 0){
+    if (ret >= 0){
         inc_nlink(dir); // What does this do and why do we need it?
         return 0;
     }
@@ -875,22 +877,38 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
     int ret;
     struct qfs_inode *qnode;
 
+    struct dentry *parent;
+    struct dentry *child;
+    parent = dentry->d_parent;
+
+    printk("...rmdir dentry %p\n", dentry);
+
+    list_for_each_entry(child, &parent->d_subdirs, d_u.d_child){
+        printk(".......rmdir for_each %s = %p\n", child->d_name.name, child);
+    }
+
     //delete from host
     path = get_entire_path(dentry);
     memcpy(&frame.data, path, sizeof(char)*strlen(path));
     qtransfer(dir, QRPC_CMD_RMDIR, &frame);
     memcpy(&ret, &frame.data, sizeof(int));
 
-    printk("...unlink return with %i\n", ret);
+    printk("...rmdir return with %i\n", ret);
 
     if(ret == 0){
-        d_delete(dentry);
+        printk("...rmdir dentry inode %p\n", dentry->d_inode);
+        qnode = qnode_of_inode(dentry->d_inode);
+        list_del(&(qnode->list));
+
         d_drop(dentry);
+
+        printk("...rmdir done drop\n");
+        d_invalidate(dentry);
+
+        printk("...rmdir nlink of dentry %i\n", dentry->d_inode->i_nlink);
+        printk("...rmdir nlink of parent %i\n", dir->i_nlink);
         simple_rmdir(dir, dentry);
 
-
-        qnode = qnode_of_inode(dentry->d_inode);
-        list_del_rcu(&(qnode->list));
 
         printk("...deleted dentry dcount: %i\n", dentry->d_count);
     } else {

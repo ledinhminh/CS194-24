@@ -277,6 +277,7 @@ static void destroy_inode(struct inode *inode)
  */
 void drop_nlink(struct inode *inode)
 {
+	printk("nlink count %i\n", inode->i_nlink);
 	WARN_ON(inode->i_nlink == 0);
 	inode->__i_nlink--;
 	if (!inode->i_nlink)

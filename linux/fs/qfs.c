@@ -881,7 +881,8 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
     //delete from host
     path = get_entire_path(dentry);
-    memcpy(&frame.data, path, sizeof(char)*strlen(path));
+    // memcpy(&frame.data, path, sizeof(char)*strlen(path));
+    strcpy(frame.data, path);
     qtransfer(dir, QRPC_CMD_RMDIR, &frame);
     memcpy(&ret, &frame.data, sizeof(int));
 

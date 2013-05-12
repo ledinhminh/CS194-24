@@ -262,10 +262,13 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
             struct dentry* loop_dentry;
 
             hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
-
+                printk("...revalidate loop_dentry: %s\n", loop_dentry->d_name.name);
                 if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
                     printk("...revalidate deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
                     list_del(&qfs_inode->list);
+                    shrink_dcache_parent(loop_dentry);
+                    d_drop(loop_dentry);
+                    dput(loop_dentry->d_parent);
                 }
             }
         }

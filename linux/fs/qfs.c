@@ -442,7 +442,6 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         // Calls d_instantiate and d_rehash
         // _debug("add to dentry");
         d_add(dentry, fde);
-        dget(dentry);
 
         // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
         out:
@@ -877,16 +876,6 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
     int ret;
     struct qfs_inode *qnode;
 
-    struct dentry *parent;
-    struct dentry *child;
-    parent = dentry->d_parent;
-
-    printk("...rmdir dentry %p\n", dentry);
-
-    list_for_each_entry(child, &parent->d_subdirs, d_u.d_child){
-        printk(".......rmdir for_each %s = %p\n", child->d_name.name, child);
-    }
-
     //delete from host
     path = get_entire_path(dentry);
     memcpy(&frame.data, path, sizeof(char)*strlen(path));
@@ -895,22 +884,36 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
     printk("...rmdir return with %i\n", ret);
 
+
     if(ret == 0){
-        printk("...rmdir dentry inode %p\n", dentry->d_inode);
         qnode = qnode_of_inode(dentry->d_inode);
         list_del(&(qnode->list));
 
-        d_drop(dentry);
 
-        printk("...rmdir done drop\n");
-        d_invalidate(dentry);
-
-        printk("...rmdir nlink of dentry %i\n", dentry->d_inode->i_nlink);
-        printk("...rmdir nlink of parent %i\n", dir->i_nlink);
         simple_rmdir(dir, dentry);
 
+        ret = d_invalidate(dentry);
+        printk("...rmdir invalidate return %i\n", ret);
+
+        d_delete(dentry);
+
+        // dput(dentry);
+        
+        printk("...rmdir nlink of parent %i\n", dir->i_nlink);
+
+
+        struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
+        struct dentry* loop_dentry;
+        struct dentry* subdir;
+
+        hlist_for_each_entry(loop_dentry, node, &(dir->i_dentry), d_alias) {
+            list_for_each_entry(subdir, &loop_dentry->d_subdirs, d_u.d_child) {
+                printk("...rmdir dir child: %s\n", subdir->d_name.name);
+            }
+        }
 
         printk("...deleted dentry dcount: %i\n", dentry->d_count);
+
     } else {
         printk("...didn't delete dentry\n");
     }

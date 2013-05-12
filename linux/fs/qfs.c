@@ -262,7 +262,7 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
         list_for_each_entry_safe(qfs_inode, qfs_inode_safe, &list, list){
             inode = &qfs_inode->inode;
 
-            struct hlist_node* node; 
+            struct hlist_node* node;
             struct dentry* loop_dentry;
 
             hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
@@ -380,7 +380,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     struct qrpc_file_info finfo;
     int done;
     char *path;
-    
+
     struct qfs_inode *maybe_inode;
 
     // we need the path from root
@@ -424,17 +424,17 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         if (NULL != (maybe_inode = find_in_list(finfo.name))) {
             struct dentry *loop_dentry;
             struct hlist_node *node;
-        
+
             hlist_for_each_entry(loop_dentry, node, &maybe_inode->inode.i_dentry, d_alias) {
                 // _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
                 list_add(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
             }
-            
+
             goto out;
         }
-        
+
         _debug("no inode, creating");
-        
+
         // create the qstr
         qname.name = finfo.name;
         qname.len = strlen(finfo.name);
@@ -562,19 +562,40 @@ static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){
 
 static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
                              loff_t *offset){
-	_enter("file: %s, user: %s, size: %d, offset: %ll",
+	_enter("file: %s, fd: %d, size: %d, offset: %lu",
          file->f_path.dentry->d_name.name,
-         buf, count, offset);
+         file->private_data,
+         count, *offset);
+  struct qrpc_frame frame;
   struct {
     int fd;
     size_t count;
     loff_t offset;
   } data;
+  int done = 0;
+  char __user * buf_ptr = buf;
   data.fd = file->private_data;
   data.count = count;
   memcpy(&data.offset, offset, sizeof(loff_t));
+  memcpy(frame.data, &data, sizeof(data));
+  frame.cmd = QRPC_CMD_READ_FILE;
+  qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
+  while(!done) {
+    done = 1;
+    memcpy(buf_ptr, frame.data, 1024);
+    //printk("frame.data = %.1024s\n", frame.data);
+    buf_ptr+=1024;
+    if(frame.ret == QRPC_RET_CONTINUE){
+      //printk("QRPC_RET_CONTINUE\n\n\n");
+      done = 0;
+      frame.cmd = QRPC_CMD_CONTINUE;
+      qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
+    }
+  }
+  //printk("data = %.4096s\n", buf);
 	//reads count bytes from the given file at position offset into buf.
 	//file pointer is then updated
+  _leave("");
 	return 0;
 }
 
@@ -663,7 +684,7 @@ static int qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     // Add the fd to the qnode's info
     _debug("backing fd=%d", backing_fd);
 
-    if (backing_fd < 0) 
+    if (backing_fd < 0)
         return backing_fd;
 
     // Make a new inode for this file.
@@ -699,9 +720,9 @@ static int qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     d_add(dentry, inode);
     dget(dentry);
     // unlock_new_inode(inode);
-    
+
     // _debug("inode state: 0x%x", inode->i_state);
-    
+
 
     _leave("");
 
@@ -865,7 +886,7 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
 
     _debug("deleting from inode list");
     list_for_each_entry_safe(entry, entry_tmp, &list, list) {
-        struct hlist_node* node; 
+        struct hlist_node* node;
         struct dentry* loop_dentry;
 
         inode = &entry->inode;
@@ -928,7 +949,7 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
         d_delete(dentry);
 
         // dput(dentry);
-        
+
         printk("...rmdir nlink of parent %i\n", dir->i_nlink);
 
 

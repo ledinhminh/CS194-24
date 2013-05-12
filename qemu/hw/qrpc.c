@@ -331,14 +331,28 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     }
     case QRPC_CMD_READ_FILE:
     {
-      int fd = -1;
-      QRPCFrame frame;
-      size_t count;
-      loff_t *offset;
-
+      struct {
+        int fd;
+        size_t count;
+        loff_t offset;
+      } data;
+      unsigned int total_read = 0, read = 0;
+      memcpy(&data, s->frame.data, sizeof(data));
+      fprintf(stderr, "Reading from fd: %d, %d bytes\n", data.fd, data.count);
+      FILE* fp = fdopen(data.fd, "r");
+      do {
+        QRPCFrame frame;
+        //read(data.fd, buf, 1024);
+        read = fread(frame.data, 1, 1024, fp);
+        total_read += read;
+        add_frame_to_buf(s, &frame);
+        fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
+      } while(total_read < data.count && read == 1024);
+      free(fp);
       break;
     }
     default:
+      fprintf(stderr, "Command was dropped %d\n", d);
         // Silently drop all unknown commands
         break;
     }

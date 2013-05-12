@@ -162,7 +162,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         unsigned short mode;
         int path_size;
         int fd = -1;
-        char path[MAX_PATH_LEN]
+        char path[MAX_PATH_LEN];
         QRPCFrame frame;
 
         memcpy(&mode, s->frame.data, sizeof(short));
@@ -330,6 +330,15 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       free(path_abs);
 
       add_frame_to_buf(s, &frame);
+      break;
+    }
+    case QRPC_CMD_READ_FILE:
+    {
+      int fd = -1;
+      QRPCFrame frame;
+      size_t count;
+      loff_t *offset;
+
       break;
     }
     default:

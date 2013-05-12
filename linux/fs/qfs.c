@@ -32,6 +32,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_RMDIR 23
 
 #define QRPC_CMD_OPEN_FILE 100
+#define QRPC_CMD_READ_FILE 101
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -480,7 +481,8 @@ static int qfs_file_open(struct inode *inode, struct file *file) {
   qtransfer(inode, QRPC_CMD_OPEN_FILE, &frame);
   if(frame.ret == QRPC_RET_OK){
     memcpy(&fd, frame.data, sizeof(int));
-    qnode_of_inode(inode)->backing_fd = fd;
+    qnode_of_inode(inode)->backing_fd = fd; // XXX: Not used
+    file->private_data = fd;
     printk("Opended fd %lu\n", fd);
   }
   _leave(" = %d", frame.ret);
@@ -495,20 +497,39 @@ static int qfs_file_release(struct inode *inode, struct file *file){
 }
 
 static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){
+	_enter("file: %s, offset: %d, origin: %d",
+         file->f_path.dentry->d_name.name,
+         offset, origin);
 	//updates file pointer to the given offset. called via llseek() system call.
 
 	printk("QFS FILE LLSEEK\n");
 	return 0;
 }
 
-static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset){
+static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
+                             loff_t *offset){
+	_enter("file: %s, user: %s, size: %d, offset: %ll",
+         file->f_path.dentry->d_name.name,
+         buf, count, offset);
+  struct {
+    int fd;
+    size_t count;
+    loff_t offset;
+  } data;
+  data.fd = file->private_data;
+  data.count = count;
+  memcpy(&data.offset, offset, sizeof(loff_t));
 	//reads count bytes from the given file at position offset into buf.
 	//file pointer is then updated
-	printk("QFS FILE READ\n");
 	return 0;
 }
 
-static ssize_t qfs_file_write(struct file *file, const char __user *buf, size_t count, loff_t *offset){
+static ssize_t qfs_file_write(struct file *file, const char __user *buf,
+                              size_t count, loff_t *offset){
+	_enter("file: %s, user: %s, size: %d, offset: %d",
+         file->f_path.dentry->d_name.name,
+         buf, count, offset);
+
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
 	printk("QFS FILE WRITE\n");
@@ -592,9 +613,9 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     }
 
     unlock_new_inode(inode);
-    
+
     // _debug("inode state: 0x%x", inode->i_state);
-    
+
     memcpy(frame.data, &mode, sizeof(unsigned short));
 
     strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
@@ -761,9 +782,9 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     struct list_head *tmp;
 
     _enter("%s", dentry->d_name.name);
-    
+
     // _debug("inode state 0x%x", dentry->d_inode->i_state);
-    
+
     _debug("sending to host");
     full_path = get_entire_path(dentry);
     strcpy(frame.data, full_path);
@@ -791,7 +812,7 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     _debug("simple unlink");
     d_invalidate(dentry);
     simple_unlink(dir, dentry);
-    
+
     // _debug("inode state 0x%x", dentry->d_inode->i_state);
     _debug("dentry count %d", dentry->d_count);
 
@@ -827,7 +848,7 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
 
         qnode = qnode_of_inode(dentry->d_inode);
-        list_del_rcu(&(qnode->list)); 
+        list_del_rcu(&(qnode->list));
 
         printk("...deleted dentry dcount: %i\n", dentry->d_count);
     } else {

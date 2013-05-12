@@ -124,6 +124,11 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 finfo.name_len = sprintf(&finfo.name, "%s", (char *) ent->d_name);
                 finfo.type = ent->d_type;
                 finfo.mode = st.st_mode;
+                finfo.size = st.st_size;
+                finfo.atime = st.st_atime;
+                finfo.mtime = st.st_mtime;
+                finfo.ctime = st.st_ctime;
+                
                 // fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
                 // fprintf(stderr, "name: %s\n", finfo.name);
                 memcpy(&(s->frame.data), &finfo, sizeof(struct qrpc_file_info));

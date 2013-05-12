@@ -77,6 +77,10 @@ struct qrpc_file_info {
     int name_len;
     char type;
     mode_t mode;
+    uint64_t size;
+    uint64_t atime;
+    uint64_t mtime;
+    uint64_t ctime;
 } __attribute__((packed));
 
 LIST_HEAD(list);
@@ -456,6 +460,10 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
                 fde->i_fop = &qfs_file_operations;
         }
         fde->i_op = &qfs_inode_operations;
+        fde->i_size = finfo.size;
+        fde->i_atime = (struct timespec) { .tv_sec = finfo.atime };
+        fde->i_mtime = (struct timespec) { .tv_sec = finfo.mtime };
+        fde->i_ctime = (struct timespec) { .tv_sec = finfo.ctime };
 
         //assign mode
         // _debug("assign mode");

@@ -70,7 +70,6 @@ struct qfs_inode {
     struct inode inode;
     struct list_head list;
     int backing_fd;
-    spinlock_t lock;
 };
 
 struct qrpc_file_info {
@@ -123,7 +122,8 @@ static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
     return container_of(inode, struct qfs_inode, inode);
 }
 
-static int find_in_list(char *name) {
+// Return the qfs_inode with this name if we can find it.
+static struct qfs_inode* find_in_list(char *name) {
     struct qfs_inode* entry;
 
     list_for_each_entry(entry, &list, list) {
@@ -133,11 +133,11 @@ static int find_in_list(char *name) {
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
 
             if (strcmp(name, loop_dentry->d_name.name) == 0) {
-                return 0;
+                return entry;
             }
         }
     }
-    return -1;
+    return NULL;
 }
 
 static char* get_entire_path(struct dentry *dentry) {
@@ -191,7 +191,7 @@ static void qfs_inode_init(void* _inode) {
     // What does this mean?!
     inode_init_once(&inode->inode);
 
-    spin_lock_init(&inode->lock);
+    // spin_lock_init(&inode->lock);
 }
 
 static struct inode* qfs_alloc_inode(struct super_block *sb) {
@@ -357,17 +357,16 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     _debug("f_pos=%d", f_pos);
     if (f_pos == 0){
         printk("...creating the (dot) directory\n");
-        filldir(dirent, ".", 1, f_pos, inode->i_ino, DT_DIR);
+        filldir(dirent, ".", 1, f_pos, inode->i_ino, S_IFDIR);
         file->f_pos = f_pos = 1;
         ret_num++;
     }
     if (f_pos == 1) {
         printk("...creating the (dot dot) directory\n");
-        filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, DT_DIR);
+        filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, S_IFDIR);
         file->f_pos = f_pos = 2;
         ret_num++;
     }
-
 
     struct super_block *sb = file->f_dentry->d_sb;
     struct dentry *dentry = file->f_dentry;
@@ -377,6 +376,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     struct qrpc_file_info finfo;
     int done;
     char *path;
+    
+    struct qfs_inode *maybe_inode;
 
     // we need the path from root
     path = get_entire_path(file->f_dentry);
@@ -385,12 +386,22 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     // sprintf(frame.data, "%s", path);
     strcpy(frame.data, path);
 
+    // dentry->d_subdirs needs to be in sync with what actually exists.
+    // Solution: blow away d_subdirs every time, repopulate existing inodes.
+    {
+    struct dentry *pos, *q;
+    list_for_each_entry_safe(pos, q, &dentry->d_subdirs, d_u.d_child) {
+        // _debug("clearing dentry=%s", pos->d_name.name);
+         list_del(&pos->d_u.d_child);
+    }
+    }
+
     // fetch stuff from device
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;
     while (!done) {
         //don't do another loop if we're done
-        if (frame.ret == QRPC_RET_OK){
+        if (frame.ret == QRPC_RET_OK) {
             // printk("...got a done...\n");
             done = 1;
         }
@@ -401,33 +412,42 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         // _debug("%s len=%i", finfo.name, strlen(finfo.name));
 
         //we don't want blank names...
-        if (strcmp(finfo.name, "") == 0){
+        if (strcmp(finfo.name, "") == 0) {
             printk("...found a blank name\n");
             continue;
         }
 
-        if (find_in_list(finfo.name) == 0){
-            // printk("...found it already name: %s\n", finfo.name);
+        if (NULL != (maybe_inode = find_in_list(finfo.name))) {
+            struct dentry *loop_dentry;
+            struct hlist_node *node;
+        
+            hlist_for_each_entry(loop_dentry, node, &maybe_inode->inode.i_dentry, d_alias) {
+                // _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
+                list_add(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
+            }
+            
             goto out;
         }
+        
+        _debug("no inode, creating");
+        
         // create the qstr
-        // This should not be created on the stack
         qname.name = finfo.name;
         qname.len = strlen(finfo.name);
         qname.hash = full_name_hash(finfo.name, qname.len);
 
-        //create the dentry
+        // Create the dentry
         // _debug("creating dentry");
         dentry = d_alloc(file->f_dentry, &qname);
 
-        //create the inode
+        // Create the inode
         // _debug("creating inode");
-        fde = qfs_make_inode(sb, DT_DIR | 0644);
+        fde = qfs_make_inode(sb, DT_DIR | 0644); // The mode doesn't matter, we set it later.
 
-        //assign operations
+        // Assign operations
         // _debug("assign ops");
-        switch(finfo.type){
-            case DT_DIR:
+        switch(finfo.type) {
+            case S_IFDIR:
                 fde->i_fop = &qfs_dir_operations;
                 inc_nlink(fde);
                 inc_nlink(inode);
@@ -440,10 +460,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         //assign mode
         // _debug("assign mode");
         fde->i_mode = finfo.mode;
-        // unlock_new_inode(fde);
-        //add it to the dcache (also attaches it to dentry)
-        // Calls d_instantiate and d_rehash
-        // _debug("add to dentry");
+
+        // add it to the dcache (also attaches it to dentry)
         d_add(dentry, fde);
 
         // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
@@ -459,7 +477,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     int i = 0; //we're gonna assume the order doesn't change....
 
     list_for_each(p, &file->f_dentry->d_subdirs) {
-        if ((i+3) > f_pos){
+        if ((i+3) > f_pos){ // What's 3?
             tmp = list_entry(p, struct dentry, d_u.d_child);
             _debug("tmp: %p", tmp);
             printk("......filldir: %s\n", tmp->d_name.name);

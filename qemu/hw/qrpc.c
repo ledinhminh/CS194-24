@@ -194,11 +194,8 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         {
         int path_size;
         short ret;
-        char* path;
+        char path[MAX_PATH_LEN];
         QRPCFrame frame;
-
-        // We need the full path.
-        path = malloc((strlen(s->path) + strlen(s->frame.data) + 1) * sizeof(char));
 
         sprintf(path, "%s/%s", s->path, s->frame.data);
 

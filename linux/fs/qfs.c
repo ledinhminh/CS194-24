@@ -234,6 +234,9 @@ static struct inode* qfs_alloc_inode(struct super_block *sb) {
 // DENTRY OPERATIONS
 static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     struct qrpc_frame frame;
+    struct qfs_inode *qfs_inode;
+    struct qfs_inode *qfs_inode_safe;
+    struct inode *inode;
     char* full_path;
 
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
@@ -247,6 +250,27 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
 
     // Go to the host every single time.
     qrpc_transfer(dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
+
+    //i would like to think that if revalidate returns 0, we delete such inode
+    if(frame.data[0] == 0) {
+        //delete the inode from our list
+        printk("...revalidate must delete inode from list\n");
+        list_for_each_entry_safe(qfs_inode, qfs_inode_safe, &list, list){
+            inode = &qfs_inode->inode;
+
+            struct hlist_node* node; 
+            struct dentry* loop_dentry;
+
+            hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
+
+                if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
+                    printk("...revalidate deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
+                    list_del(&qfs_inode->list);
+                }
+            }
+        }
+        printk("...revlaidate deletion has happened\n");
+    }
 
     // _debug("exists: %u", frame.data[0]);
 
@@ -411,7 +435,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         //assign mode
         // _debug("assign mode");
         fde->i_mode = finfo.mode;
-        unlock_new_inode(fde);
+        // unlock_new_inode(fde);
         //add it to the dcache (also attaches it to dentry)
         // Calls d_instantiate and d_rehash
         // _debug("add to dentry");
@@ -556,28 +580,39 @@ static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 
 // Modelled after ramfs
 
-static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode);
+static int qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode);
 
 static int qfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
+    int ret;
     _enter("dentry=%s", dentry->d_name.name);
 
-    qfs_mknod(dir, dentry, mode | S_IFREG);
+    ret = qfs_mknod(dir, dentry, mode | S_IFREG);
 
+    if (ret < 0) {
+        return -EIO;
+    }
     _leave("");
 	return 0;
 }
 
 static int qfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
+    int ret;
+
     _enter("dentry=%s", dentry->d_name.name);
 
-    qfs_mknod(dir, dentry, mode | S_IFDIR);
-    inc_nlink(dir); // What does this do and why do we need it?
+    ret = qfs_mknod(dir, dentry, mode | S_IFDIR);
 
+    if (ret > 0){
+        inc_nlink(dir); // What does this do and why do we need it?
+        return 0;
+    }
+
+    _debug("ret = %i\n", ret);
     _leave("");
-	return 0;
+	return -EIO;
 }
 
-static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
+static int qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     struct inode *inode;
     struct qfs_inode *qnode;
     struct qrpc_frame frame;
@@ -585,9 +620,26 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
 
     _enter("dentry=%s, mode=0x%x", dentry->d_name.name, mode);
 
+    memcpy(frame.data, &mode, sizeof(unsigned short));
+
+    strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
+
+    // Here we go.
+    qtransfer(dir, QRPC_CMD_CREATE, &frame);
+
+    memcpy(&backing_fd, frame.data, sizeof(int));
+    // TODO: Do some error checking here
+
+    // Add the fd to the qnode's info
+    _debug("backing fd=%d", backing_fd);
+
+    if (backing_fd < 0) 
+        return backing_fd;
+
     // Make a new inode for this file.
     inode = new_inode(dir->i_sb);
     qnode = qnode_of_inode(inode);
+    qnode->backing_fd = backing_fd;
 
     // Some inode bookkeeping. From ramfs_get_inode
     // Could do with some refactoring, we might (?) need to do this elsewhere.
@@ -612,30 +664,18 @@ static void qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
         break;
     }
 
-    unlock_new_inode(inode);
-
-    // _debug("inode state: 0x%x", inode->i_state);
-
-    memcpy(frame.data, &mode, sizeof(unsigned short));
-
-    strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
-
-    // Here we go.
-    qtransfer(dir, QRPC_CMD_CREATE, &frame);
-
-    memcpy(&backing_fd, frame.data, sizeof(int));
-    // TODO: Do some error checking here
-
-    // Add the fd to the qnode's info
-    _debug("backing fd=%d", backing_fd);
-    qnode->backing_fd = backing_fd;
-
+    _debug("mknod making dentry and adding it");
     // I think we have to do this. From ramfs_mknod
     d_add(dentry, inode);
-    // d_instantiate(dentry, inode);
     dget(dentry);
+    // unlock_new_inode(inode);
+    
+    // _debug("inode state: 0x%x", inode->i_state);
+    
 
     _leave("");
+
+    return backing_fd;
 }
 
 static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
@@ -778,8 +818,8 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     struct qrpc_frame frame;
     int remote_ret;
     struct qfs_inode *entry;
-    struct list_head *list_head;
-    struct list_head *tmp;
+    struct qfs_inode *entry_tmp;
+    struct inode *inode;
 
     _enter("%s", dentry->d_name.name);
 
@@ -794,20 +834,22 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     // Take out of list
 
     _debug("deleting from inode list");
-    list_for_each_safe(list_head, tmp, &list) {
-        struct hlist_node *node; /* Miscellaneous crap needed for hlists. */
-        struct hlist_node *tmp;
+    list_for_each_entry_safe(entry, entry_tmp, &list, list) {
+        struct hlist_node* node; 
         struct dentry* loop_dentry;
 
-        entry = list_entry(&list, struct qfs_inode, list);
+        inode = &entry->inode;
 
-        hlist_for_each_entry_safe(loop_dentry, node, tmp, &(entry->inode.i_dentry), d_alias) {
+        hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
             if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
-                _debug("found it, deleting...");
-                list_del(entry);
+                printk("...unlink deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
+                list_del(&entry->list);
+                d_drop(loop_dentry);
             }
         }
     }
+
+    printk("...unlink deletion has happened\n");
 
     _debug("simple unlink");
     d_invalidate(dentry);

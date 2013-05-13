@@ -138,7 +138,8 @@ static struct qfs_inode* find_in_list(char *name) {
 
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
             char *loop_path;
-            loop_path = get_entire_path(loop_dentry);
+            char char_buf[256];
+            loop_path = dentry_path_raw(loop_dentry, char_buf, 256);
 
             if (strcmp(name, loop_path) == 0) {
                 return entry;
@@ -246,13 +247,15 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     struct qfs_inode *qfs_inode_safe;
     struct inode *inode;
     char* full_path;
+    char path_buf[256];
 
     // Return values - 0 for bad, 1 for good (see afs_d_revalidate)
     _enter("dentry=%s", dentry->d_name.name);
 
     frame.cmd = QRPC_CMD_REVALIDATE;
 
-    full_path = get_entire_path(dentry);
+    // full_path = get_entire_path(dentry);
+    full_path = dentry_path_raw(dentry, path_buf, 256);
 
     strcpy(frame.data, full_path);
 
@@ -388,7 +391,10 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     struct qfs_inode *maybe_inode;
 
     // we need the path from root
-    path = get_entire_path(file->f_dentry);
+    // path = get_entire_path(file->f_dentry);
+    char path_buf[256];
+    path = dentry_path_raw(file->f_dentry, path_buf, 256);
+
 
     _debug("path=%s", path);
     // sprintf(frame.data, "%s", path);
@@ -426,11 +432,9 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         }
 
         //try to find it the file in the dentires we already have
-        char* root_path;
         char* full_path;
-        root_path = get_entire_path(file->f_dentry);
-        full_path = kmalloc(sizeof(char)*(strlen(root_path) + strlen(finfo.name)), GFP_KERNEL);
-        sprintf(full_path, "%s/%s", root_path, finfo.name);
+        full_path = kmalloc(sizeof(char)*(strlen(path) + strlen(finfo.name)), GFP_KERNEL);
+        sprintf(full_path, "%s/%s", path, finfo.name);
         printk("......entire path is %s\n", full_path);
 
         if (NULL != (maybe_inode = find_in_list(full_path))) {
@@ -442,11 +446,11 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
                 list_add_tail(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
             }
 
+            kfree(full_path);
             goto out;
         }
 
         kfree(full_path);
-        kfree(root_path);
 
         _debug("no inode, creating %s", finfo.name);
 
@@ -769,12 +773,11 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     struct qrpc_frame frame;
     struct qrpc_file_info finfo;
     struct qfs_inode* qdir;
-
     struct qfs_inode* entry;
-
     char *path;
-
     int done;
+    char buffer_one[256];
+    char buffer_two[256];
 
     _enter("dir=%p, dentry=%s, parent=%s parent_inode=%p", dir, dentry->d_name.name, dentry->d_parent->d_name.name, dentry->d_parent->d_inode);
 
@@ -797,7 +800,10 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
             _debug("dentry: d_name=%s", loop_dentry->d_name.name);
 
-            if (strcmp(get_entire_path(dentry), get_entire_path(loop_dentry)) == 0) {
+
+
+            // if (strcmp(get_entire_path(dentry), get_entire_path(loop_dentry)) == 0) {
+            if(strcmp(dentry_path_raw(dentry, buffer_one, 256), dentry_path_raw(loop_dentry, buffer_two, 256)) == 0){
                 _debug("found matching filename in inode list, instantiating dentry");
                 _debug("i_ino=%lu", entry->inode.i_ino);
 

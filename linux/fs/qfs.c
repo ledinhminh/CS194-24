@@ -1133,6 +1133,7 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
 static int qfs_setattr(struct dentry *dentry, struct iattr *attr){
 	//caled from notify_change() to notify a 'change event' after an inode has been modified
 	printk("QFS INODE SETATTR\n");
+    simple_setattr(dentry, attr);
 	return 0;
 }
 

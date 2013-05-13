@@ -262,25 +262,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         add_frame_to_buf(s, &frame);
         break;
         }
-    case QRPC_CMD_STAT:
-        {
-        // Worst stat I've ever seen.
-
-
-        struct stat st;
-        int ret;
-        char *full_path;
-
-        full_path = strdup(s->frame.data);
-
-        ret = stat(full_path, &st);
-
-        QRPCFrame frame;
-        memcpy(frame.data, &st.st_mode, sizeof(mode_t));
-
-        add_frame_to_buf(s, &frame);
-        break;
-        }
     case QRPC_CMD_RMDIR:
     {
         //delete a directory
@@ -371,6 +352,49 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       frame.ret = fclose(fp);
       //free(fp); // fclose frees fp
       add_frame_to_buf(s, &frame);
+    }
+    case QRPC_CMD_WRITE_START:
+    {
+        add_frame_to_buf(s, &s->frame);
+        break;
+    }
+    case QRPC_CMD_WRITE_END:
+    {   
+        QRPCFrame frame;
+        struct qrpc_inflight inflight;
+        unsigned int i = 0;
+        int written = 0;
+        FILE *fp;
+        
+        add_frame_to_buf(s, &s->frame);
+        
+        for (i = 0; i < s->buf_size; i++) {
+            frame = s->buffer[i];
+            memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
+            printf("write: this frame: backing_fd=%d, len=%d, offset=%l\n", 
+                inflight.backing_fd, inflight.len, inflight.offset);
+            
+            // We don't know the fd until now.
+            if (fp == NULL) {
+                fp = fdopen(inflight.backing_fd, "w");
+                if (fseek(fp, inflight.offset, SEEK_SET) != 0) { // fseek failed
+                    written = -errno;
+                    goto done;
+                }
+            }
+            
+            written += fwrite(inflight.data, inflight.len, 1, fp);
+        }
+        
+        done:
+        // Clear the buffers
+        s->buf_size = 0;
+        s->buf_read = 0;
+        memset(s->buffer, 0, sizeof(QRPCFrame) * QRPC_BUFFER_LEN);
+        
+        memcpy(frame.data, &written, sizeof(unsigned int));
+        add_frame_to_buf(s, &frame);
+        break;
     }
     default:
         // Silently drop all unknown commands

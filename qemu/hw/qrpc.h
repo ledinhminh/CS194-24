@@ -10,8 +10,13 @@
 #define QRPC_CMD_REVALIDATE 15
 #define QRPC_CMD_RENAME 20
 #define QRPC_CMD_UNLINK 25
-#define QRPC_CMD_STAT 30
 #define QRPC_CMD_RMDIR 23
+#define QRPC_CMD_WRITE_START 30
+#define QRPC_CMD_WRITE_END 31
+
+#define QRPC_CMD_OPEN_FILE 100
+#define QRPC_CMD_READ_FILE 101
+#define QRPC_CMD_RELEASE_FILE 102
 
 #define QRPC_CMD_OPEN_FILE 100
 #define QRPC_CMD_READ_FILE 101
@@ -40,7 +45,8 @@ struct qrpc_file_info {
 struct qrpc_inflight {
     uint32_t backing_fd;
     uint16_t len;
-    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t)];
+    uint64_t offset;
+    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint64_t)];
 } __attribute__((packed));
 
 // Holds a single frame of IO

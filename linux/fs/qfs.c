@@ -85,6 +85,12 @@ struct qrpc_file_info {
     uint64_t ctime;
 } __attribute__((packed));
 
+struct qrpc_inflight {
+    uint32_t backing_fd;
+    uint16_t len;
+    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t)];
+} __attribute__((packed));
+
 LIST_HEAD(list);
 
 spinlock_t list_mutex;
@@ -587,39 +593,43 @@ static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){
 }
 
 static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
-                             loff_t *offset){
-	_enter("file: %s, fd: %d, size: %d, offset: %lu",
-         file->f_path.dentry->d_name.name,
-         file->private_data,
-         count, *offset);
-  struct qrpc_frame frame;
-  struct {
-    int fd;
-    size_t count;
-    loff_t offset;
-  } data;
-  char* buf_ptr = buf;
-  unsigned int total_read;
-  data.fd = file->private_data;
-  data.count = count;
-  memcpy(&data.offset, offset, sizeof(loff_t));
-  memcpy(frame.data, &data, sizeof(data));
-  frame.cmd = QRPC_CMD_READ_FILE;
-  qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-  while(frame.ret == QRPC_RET_CONTINUE) {
-    copy_to_user(buf_ptr, frame.data, 1024);
-    //memcpy(buf_ptr, frame.data, 1024);
-    //printk("frame.data = %.1024s\n", frame.data);
-    buf_ptr+=1024;
-    frame.cmd = QRPC_CMD_CONTINUE;
+                             loff_t *offset) {
+
+    struct qrpc_frame frame;
+    struct qrpc_inflight inflight;
+    struct {
+        int fd;
+        size_t count;
+        loff_t offset;
+    } data;
+    char* buf_ptr = buf;
+    unsigned int total_read = 0;
+  
+  	_enter("file: %s, fd: %d, size: %d, offset: %lu",
+         file->f_path.dentry->d_name.name, file->private_data, count, *offset);
+         
+    data.fd = file->private_data;
+    data.count = count;
+    memcpy(&data.offset, &offset, sizeof(loff_t));
+    memcpy(&frame.data, &data, sizeof(data));
+    frame.cmd = QRPC_CMD_READ_FILE;
     qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-  }
-  memcpy(&total_read, frame.data, sizeof(unsigned int));
-  printk("read %u bytes\n", total_read);
-	//reads count bytes from the given file at position offset into buf.
-	//file pointer is then updated
-  _leave("");
-	return total_read;
+  
+    while(frame.ret == QRPC_RET_CONTINUE) {
+        memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
+
+        _debug("frame len=%d", inflight.len);
+        // _debug("frame data=%s", inflight.data);
+        copy_to_user(buf_ptr, inflight.data, inflight.len);
+
+        buf_ptr += inflight.len;
+        total_read += inflight.len;
+        frame.cmd = QRPC_CMD_CONTINUE;
+        qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
+    }
+    
+    _leave(" = %d", total_read);
+    return total_read;
 }
 
 static ssize_t qfs_file_write(struct file *file, const char __user *buf,

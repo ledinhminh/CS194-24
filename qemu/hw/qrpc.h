@@ -37,6 +37,11 @@ struct qrpc_file_info {
     uint64_t ctime;
 } __attribute__((packed));
 
+struct qrpc_inflight {
+    uint32_t backing_fd;
+    uint16_t len;
+    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t)];
+} __attribute__((packed));
 
 // Holds a single frame of IO
 typedef struct QRPCFrame {

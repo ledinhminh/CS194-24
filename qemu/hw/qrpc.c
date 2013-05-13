@@ -326,28 +326,38 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     }
     case QRPC_CMD_READ_FILE:
     {
-      struct {
+    struct {
         int fd;
         size_t count;
         loff_t offset;
-      } data;
-      unsigned int total_read = 0, read = 0;
-      memcpy(&data, s->frame.data, sizeof(data));
-      fprintf(stderr, "Reading from fd: %d, %d bytes\n", data.fd, data.count);
-      FILE* fp = fdopen(data.fd, "r");
-      do {
+    } data;
+    unsigned int total_read = 0, read = 0;
+    FILE *fp;
+    
+    memcpy(&data, s->frame.data, sizeof(data));
+    fprintf(stderr, "Reading from fd: %d, %d bytes\n", data.fd, data.count);
+    fp = fdopen(data.fd, "r");
+    do {
         QRPCFrame frame;
-        //read(data.fd, buf, 1024);
-        read = fread(frame.data, 1, 1024, fp);
-        total_read += read;
+        struct qrpc_inflight inflight;
+
+        read = fread(inflight.data, 1, QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t), fp);
+        inflight.len = read;
+        inflight.backing_fd = data.fd;
+
+        // total_read += read;
+        memcpy(&frame.data, &inflight, sizeof(struct qrpc_inflight));
+
         add_frame_to_buf(s, &frame);
         fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
-      } while(total_read < data.count && read == 1024);
-      free(fp);
-      QRPCFrame frame;
-      memcpy(frame.data, &total_read, sizeof(unsigned int));
-      add_frame_to_buf(s, &frame);
-      break;
+    } while(total_read < data.count && read == QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t));
+    
+    free(fp);
+    QRPCFrame frame;
+    memcpy(frame.data, &total_read, sizeof(unsigned int));
+    add_frame_to_buf(s, &frame);
+    
+    break;
     }
     case QRPC_CMD_RELEASE_FILE:
     {

@@ -129,7 +129,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 finfo.mtime = st.st_mtime;
                 finfo.ctime = st.st_ctime;
                 
-                // fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
+                fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
                 // fprintf(stderr, "name: %s\n", finfo.name);
                 memcpy(&(s->frame.data), &finfo, sizeof(struct qrpc_file_info));
 
@@ -149,16 +149,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         //return an ok
         s->frame.ret = QRPC_RET_OK;
 
-        //just gonna print out the buffer
-        // int i;
-        // struct QRPCFrame frame;
-        // struct qrpc_file_info finfo;
-        // memset(&finfo, 0, sizeof(struct qrpc_file_info));
-        // for (i = 0; i < s->buf_size; i++){
-        //     frame = (s->buffer)[i];
-        //     memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
-        //     fprintf(stderr, "%s\n", finfo.name);
-        // }
         break;
         }
     case QRPC_CMD_CREATE:
@@ -360,7 +350,6 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       break;
     }
     default:
-      fprintf(stderr, "Command was dropped %d\n", d);
         // Silently drop all unknown commands
         break;
     }

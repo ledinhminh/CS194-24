@@ -99,6 +99,7 @@ struct qfs_inode head;
 
 
 static struct inode *qfs_make_inode(struct super_block *sb, int mode);
+static char* get_entire_path(struct dentry *dentry);
 
 //because getting the block device SUCKS~!!!
 static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
@@ -136,8 +137,10 @@ static struct qfs_inode* find_in_list(char *name) {
         struct dentry* loop_dentry;
 
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
+            char *loop_path;
+            loop_path = get_entire_path(loop_dentry);
 
-            if (strcmp(name, loop_dentry->d_name.name) == 0) {
+            if (strcmp(name, loop_path) == 0) {
                 return entry;
             }
         }
@@ -150,7 +153,7 @@ static char* get_entire_path(struct dentry *dentry) {
     char *path;
     int path_len;
 
-    _enter("dentry=%s", dentry->d_name.name);
+    // _enter("dentry=%s", dentry->d_name.name);
 
     path_len = strlen(dentry->d_name.name);
     path = kstrdup(dentry->d_name.name, GFP_KERNEL);
@@ -161,7 +164,7 @@ static char* get_entire_path(struct dentry *dentry) {
         return NULL;
     }
 
-    _debug("adding %s onto path (len=%d)", path, path_len);
+    // _debug("adding %s onto path (len=%d)", path, path_len);
     dentry = dentry->d_parent;
 
     while (dentry != dentry->d_sb->s_root) {
@@ -171,14 +174,14 @@ static char* get_entire_path(struct dentry *dentry) {
         memset(path_tmp, 0, sizeof(char) * path_len);
         sprintf(path_tmp, "%s/%s", dentry->d_name.name, path);
 
-        _debug("adding %s onto path (total len=%d)", dentry->d_name.name, path_len);
+        // _debug("adding %s onto path (total len=%d)", dentry->d_name.name, path_len);
         path = path_tmp;
 
         dentry = dentry->d_parent;
-        _debug("current path=%s\n", path);
+        // _debug("current path=%s\n", path);
     }
 
-    _leave(" = %s", path);
+    // _leave(" = %s", path);
     return path == NULL ? "/" : path;
 }
 
@@ -422,7 +425,16 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
             continue;
         }
 
-        if (NULL != (maybe_inode = find_in_list(finfo.name))) {
+        //try to find it the file in the dentires we already have
+        char* root_path;
+        char* full_path;
+        root_path = get_entire_path(file->f_dentry);
+        full_path = kmalloc(sizeof(char)*(strlen(root_path) + strlen(finfo.name)), GFP_KERNEL);
+        sprintf(full_path, "%s/%s", root_path, finfo.name);
+        printk("......root path is %s\n", root_path);
+        printk("......entire path is %s\n", full_path);
+
+        if (NULL != (maybe_inode = find_in_list(full_path))) {
             struct dentry *loop_dentry;
             struct hlist_node *node;
 
@@ -433,6 +445,9 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
             goto out;
         }
+
+        kfree(full_path);
+        kfree(root_path);
 
         _debug("no inode, creating");
 
@@ -452,7 +467,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         // Assign operations
         // _debug("assign ops");
         switch(finfo.type) {
-            case S_IFDIR:
+            case DT_DIR:
                 fde->i_fop = &qfs_dir_operations;
                 inc_nlink(fde);
                 inc_nlink(inode);
@@ -759,7 +774,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
 
     int done;
 
-    _enter("dir=%p, dentry=%s, parent=%s", dir, dentry->d_name.name, dentry->d_parent->d_name.name);
+    _enter("dir=%p, dentry=%s, parent=%s parent_inode=%p", dir, dentry->d_name.name, dentry->d_parent->d_name.name, dentry->d_parent->d_inode);
 
     qdir = qnode_of_inode(dir);
 
@@ -780,7 +795,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
         hlist_for_each_entry(loop_dentry, node, &(entry->inode.i_dentry), d_alias) {
             _debug("dentry: d_name=%s", loop_dentry->d_name.name);
 
-            if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
+            if (strcmp(get_entire_path(dentry), get_entire_path(loop_dentry)) == 0) {
                 _debug("found matching filename in inode list, instantiating dentry");
                 _debug("i_ino=%lu", entry->inode.i_ino);
 
@@ -791,6 +806,25 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
             }
         }
     }
+
+    // struct dentry *loop_dentry;
+    // struct dentry *subdir_dentry;
+    // struct hlist_node *head;
+
+    // hlist_for_each_entry(loop_dentry, head, &dir->i_dentry, d_u.d_child){
+    //     _debug("looking through dentry %s", loop_dentry->d_name.name);
+    //     list_for_each_entry(subdir_dentry, &loop_dentry->d_subdirs, d_u.d_child){
+    //         printk("subdir dentry %s", subdir_dentry->d_name.name);
+    //         if (strcmp(subdir_dentry->d_name.name, dentry->d_name.name) == 0){
+
+    //             _debug("found matching filename in inode list, instantiating dentry");
+    //             d_add(dentry, subdir_dentry->d_inode);
+    //             dget(dentry);
+    //             _leave(" = NULL");
+    //             return NULL;
+    //         }
+    //     }
+    // }
 
     // We don't have it. Go to the host and see if it really exists. If it does, allocate an inode for it.
     _debug("not in list, doing transfer");

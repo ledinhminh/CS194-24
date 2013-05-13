@@ -655,8 +655,8 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
     memcpy(&frame.data, &data, sizeof(data));
     frame.cmd = QRPC_CMD_READ_FILE;
     qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-
-    while(frame.ret == QRPC_RET_CONTINUE) {
+  
+    do {
         memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
 
         _debug("frame len=%d", inflight.len);
@@ -667,8 +667,8 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
         total_read += inflight.len;
         frame.cmd = QRPC_CMD_CONTINUE;
         qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-    }
-
+    } while(frame.ret == QRPC_RET_CONTINUE);
+    
     _leave(" = %d", total_read);
     return total_read;
 }
@@ -691,6 +691,7 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
     printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
     printk("sizeof framedata: %i\t sizeof loff_t: %i\n", sizeof(framedata.data), sizeof(loff_t));
+    printk("inode size: %i\t bytes: %i\n", file->f_dentry->d_inode->i_size, file->f_dentry->d_inode->i_size);
     
     //figure out how many frames we need and alloc that much
     frame_count = (count/sizeof(framedata.data)) + 1;
@@ -732,10 +733,20 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
     //kfree or else kernel panic
     kfree(frame_list);
 
+    struct qrpc_frame *last = frame_list + (frames_written - 1);
+    struct qrpc_file_info finfo;
+    memcpy(&finfo, &last->data, sizeof(struct qrpc_file_info));
+    _debug("new size is %d\n", finfo.size);
+    file->f_dentry->d_inode->i_size = finfo.size;
+    file->f_dentry->d_inode->i_bytes = finfo.size;
+
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
-    file->f_pos = offset + bytes_written;
+    file->f_pos = *offset + bytes_written;
 	printk("QFS FILE WRITE\n");
+    _debug("f_pos %i", file->f_pos);
+    _debug("f_size %i", file->f_dentry->d_inode->i_size);
+    _debug("f_bytes %i", file->f_dentry->d_inode->i_bytes);
     _leave("bytes_written: %i", bytes_written);
 	return bytes_written;
 }

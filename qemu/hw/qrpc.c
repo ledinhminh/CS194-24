@@ -331,6 +331,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
 
         // total_read += read;
         memcpy(&frame.data, &inflight, sizeof(struct qrpc_inflight));
+        frame.ret = QRPC_RET_CONTINUE;
 
         add_frame_to_buf(s, &frame);
         fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
@@ -374,7 +375,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         for (i = 0; i < s->buf_size; i++) {
             frame = s->buffer[i];
             memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
-            printf("write: this frame: backing_fd=%d, len=%d, offset=%l\n", 
+            printf("write: this frame: backing_fd=%d, len=%d, offset=%lu\n", 
                 inflight.backing_fd, inflight.len, inflight.offset);
             
             // We don't know the fd until now.
@@ -382,20 +383,34 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 fp = fdopen(inflight.backing_fd, "w");
                 if (fseek(fp, inflight.offset, SEEK_SET) != 0) { // fseek failed
                     written = -errno;
+                    fprintf(stderr, "fseek failed %s\n", strerror(errno));
                     goto done;
                 }
             }
             
-            written += fwrite(inflight.data, inflight.len, 1, fp);
+            written += fwrite(inflight.data, 1, inflight.len, fp);
+            fprintf(stderr, "loop  written %i\n", written);
+            if (written != inflight.len){
+                fprintf(stderr, "error: %s\n", strerror(errno));
+            }
         }
         
         done:
         // Clear the buffers
+        fflush(fp);
         s->buf_size = 0;
         s->buf_read = 0;
         memset(s->buffer, 0, sizeof(QRPCFrame) * QRPC_BUFFER_LEN);
         
-        memcpy(frame.data, &written, sizeof(unsigned int));
+        struct stat st;
+        struct qrpc_file_info finfo;
+        fstat(inflight.backing_fd, &st);
+        finfo.size = st.st_size;
+        finfo.name_len = written;
+
+        printf("write: new size is %d\n", st.st_size);
+        memcpy(frame.data, &finfo, sizeof(struct qrpc_file_info));
+
         add_frame_to_buf(s, &frame);
         break;
     }

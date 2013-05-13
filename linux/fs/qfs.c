@@ -93,7 +93,8 @@ struct qrpc_inflight {
 
 LIST_HEAD(list);
 
-spinlock_t list_mutex;
+spinlock_t device_lock;
+
 struct qfs_inode head;
 
 #define kenter(FMT,...) printk("==> %s("FMT")\n",__func__ ,##__VA_ARGS__)
@@ -122,6 +123,26 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 	qrpc_transfer(bdev, f, sizeof(struct qrpc_frame));
 
     // _leave("");
+}
+
+// f IS AN _ARRAY_ OF QRPC FRAMES OF LENGTH num
+static void qwrite(struct inode *inode, struct qrpc_frame *f, int num){
+    int i;
+    struct qrpc_frame *frame;
+    struct block_device *bdev;
+    bdev = inode->i_sb->s_bdev;
+
+    for(i = 0; i < num; i++){
+        frame = f + i;
+
+        if (i == 0){
+            frame->cmd = QRPC_CMD_WRITE_START;
+        } else {
+            frame->cmd = QRPC_CMD_WRITE_END;
+        }
+        f->ret = QRPC_RET_ERR;
+        qrpc_transfer(bdev, f + i, sizeof(struct qrpc_frame));
+    }
 }
 
 //looking for an dentry, given a name and root inode...
@@ -638,6 +659,10 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
          file->f_path.dentry->d_name.name,
          buf, count, offset);
 
+    //figure out how many frames I need
+    int frames = (count/1024) + 1;
+
+    
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
 	printk("QFS FILE WRITE\n");
@@ -829,25 +854,6 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
             }
         }
     }
-
-    // struct dentry *loop_dentry;
-    // struct dentry *subdir_dentry;
-    // struct hlist_node *head;
-
-    // hlist_for_each_entry(loop_dentry, head, &dir->i_dentry, d_u.d_child){
-    //     _debug("looking through dentry %s", loop_dentry->d_name.name);
-    //     list_for_each_entry(subdir_dentry, &loop_dentry->d_subdirs, d_u.d_child){
-    //         printk("subdir dentry %s", subdir_dentry->d_name.name);
-    //         if (strcmp(subdir_dentry->d_name.name, dentry->d_name.name) == 0){
-
-    //             _debug("found matching filename in inode list, instantiating dentry");
-    //             d_add(dentry, subdir_dentry->d_inode);
-    //             dget(dentry);
-    //             _leave(" = NULL");
-    //             return NULL;
-    //         }
-    //     }
-    // }
 
     // We don't have it. Go to the host and see if it really exists. If it does, allocate an inode for it.
     _debug("not in list, doing transfer");

@@ -503,8 +503,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     list_for_each(p, &file->f_dentry->d_subdirs) {
         if ((i+3) > f_pos){ // What's 3?
             tmp = list_entry(p, struct dentry, d_u.d_child);
-            _debug("tmp: %p", tmp);
-            printk("......filldir: %s\n", tmp->d_name.name);
+            _debug("tmp: %p %i", tmp, tmp->d_inode->i_ino);
+            printk("......filldir: %s %i\n", tmp->d_name.name, tmp->d_inode->i_ino);
             ino = tmp->d_inode->i_ino;
             filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, tmp->d_inode->i_mode);
             file->f_pos++;
@@ -799,8 +799,9 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
                 _debug("found matching filename in inode list, instantiating dentry");
                 _debug("i_ino=%lu", entry->inode.i_ino);
 
-                d_add(dentry, inode);
-                dget(dentry);
+                dentry->d_inode = &entry->inode;
+                // d_add(dentry, &entry->inode);
+                // dget(dentry);
                 _leave(" = NULL");
                 return NULL;
             }

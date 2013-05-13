@@ -369,18 +369,20 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         unsigned int i = 0;
         int written = 0;
         FILE *fp;
-        
+        fp = NULL;
         add_frame_to_buf(s, &s->frame);
         
         for (i = 0; i < s->buf_size; i++) {
             frame = s->buffer[i];
             memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
-            printf("write: this frame: backing_fd=%d, len=%d, offset=%lu\n", 
-                inflight.backing_fd, inflight.len, inflight.offset);
+            printf("write: this frame: backing_fd=%d, len=%d, offset=%lu\n", inflight.backing_fd, inflight.len, inflight.offset);
             
+            printf("%s\n", inflight.data); 
             // We don't know the fd until now.
             if (fp == NULL) {
+                fprintf(stderr, "fp is null, creating one\n");
                 fp = fdopen(inflight.backing_fd, "w");
+                fprintf(stderr, "fp has been created\n");
                 if (fseek(fp, inflight.offset, SEEK_SET) != 0) { // fseek failed
                     written = -errno;
                     fprintf(stderr, "fseek failed %s\n", strerror(errno));
@@ -388,6 +390,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 }
             }
             
+            fprintf(stderr, "fp is not null, we do fwrite\n");
             written += fwrite(inflight.data, 1, inflight.len, fp);
             fprintf(stderr, "loop  written %i\n", written);
             if (written != inflight.len){

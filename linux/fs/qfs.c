@@ -662,11 +662,57 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
          buf, count, offset);
 
     //figure out how many frames I need
-    struct qrpc_inflight *frames;
-    printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(struct qrpc_frame), sizeof(struct qrpc_inflight));
-    int frame_count = (count/sizeof(frames->data)) + 1;
+    struct qrpc_inflight framedata;
+    struct qrpc_frame *frame_list;
+    struct qrpc_frame *cur_frame;
+    int bytes_written;
+    int frames_written;
+    int frame_count;
+    char *kbuf;
 
+
+    printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
+    printk("sizeof framedata: %i\n", sizeof(framedata.data));
     
+    //figure out how many frames we need and alloc that much
+    frame_count = (count/sizeof(framedata.data)) + 1;
+    frame_list = kmalloc(sizeof(struct qrpc_frame)*frame_count, GFP_KERNEL);
+
+    //split buf data into qrpc frames
+    bytes_written = 0;
+    printk("number of frames needed: %i\n", frame_count);
+
+    while(bytes_written < count) {
+        cur_frame = frame_list + frames_written;
+        memset(&framedata, 0, sizeof(framedata));
+
+        //copy in the fd
+        framedata.backing_fd = file->private_data;
+
+        if((count - bytes_written) > sizeof(framedata.data)){ // Not last frame
+            //copy data into the framedata
+            _debug("writing %d bytes", sizeof(framedata.data));
+            copy_from_user(&framedata.data, buf, sizeof(framedata.data));
+            //copy in how much we wrote
+            framedata.len = sizeof(framedata.data);
+            //copy framedata into the qrpc frame
+        } else {
+            _debug("writing %d bytes", (count - bytes_written));
+            copy_from_user(&framedata.data, buf, (count - bytes_written));
+            framedata.len = count - bytes_written;
+        }
+
+        _debug("gonna write %i bytes into cur_frame", framedata.len);
+        memcpy(&cur_frame->data, &framedata, sizeof(framedata));
+        frames_written++;
+        bytes_written += framedata.len;
+    }
+
+
+    _debug("These should be equal, count:%i written:%i", frame_count, frames_written);
+    // qwrite(file->f_inode, frame_list, frames_written);
+    //kfree or else kernel panic
+    kfree(frame_list);
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
 	printk("QFS FILE WRITE\n");

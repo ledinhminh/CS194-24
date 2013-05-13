@@ -31,6 +31,10 @@ struct qrpc_file_info {
     int name_len;
     char type;
     mode_t mode;
+    uint64_t size;
+    uint64_t atime;
+    uint64_t mtime;
+    uint64_t ctime;
 } __attribute__((packed));
 
 struct qrpc_inflight {

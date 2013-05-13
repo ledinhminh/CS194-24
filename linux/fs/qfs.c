@@ -692,6 +692,7 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
     printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
     printk("sizeof framedata: %i\t sizeof loff_t: %i\n", sizeof(framedata.data), sizeof(loff_t));
     printk("inode size: %i\t bytes: %i\n", file->f_dentry->d_inode->i_size, file->f_dentry->d_inode->i_size);
+    printk("file mode: 0x%x\n", file->f_mode);
     
     //figure out how many frames we need and alloc that much
     frame_count = (count/sizeof(framedata.data)) + 1;

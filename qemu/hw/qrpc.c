@@ -321,10 +321,13 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     do {
         QRPCFrame frame;
         struct qrpc_inflight inflight;
+        int data_size = QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint64_t);
+        int this_count = data.count - total_read > data_size ? data_size : data.count - total_read;
 
-        read = fread(inflight.data, 1, QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint64_t) , fp);
+        read = fread(inflight.data, 1, this_count, fp);
         inflight.len = read;
         inflight.backing_fd = data.fd;
+        total_read += read;
 
         // total_read += read;
         memcpy(&frame.data, &inflight, sizeof(struct qrpc_inflight));

@@ -431,7 +431,6 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         root_path = get_entire_path(file->f_dentry);
         full_path = kmalloc(sizeof(char)*(strlen(root_path) + strlen(finfo.name)), GFP_KERNEL);
         sprintf(full_path, "%s/%s", root_path, finfo.name);
-        printk("......root path is %s\n", root_path);
         printk("......entire path is %s\n", full_path);
 
         if (NULL != (maybe_inode = find_in_list(full_path))) {
@@ -439,8 +438,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
             struct hlist_node *node;
 
             hlist_for_each_entry(loop_dentry, node, &maybe_inode->inode.i_dentry, d_alias) {
-                // _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
-                list_add(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
+                _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
+                list_add_tail(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
             }
 
             goto out;
@@ -449,7 +448,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         kfree(full_path);
         kfree(root_path);
 
-        _debug("no inode, creating");
+        _debug("no inode, creating %s", finfo.name);
 
         // create the qstr
         qname.name = finfo.name;
@@ -510,6 +509,9 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
             file->f_pos++;
             f_pos++;
             ret_num++;
+        } else {
+            tmp = list_entry(p, struct dentry, d_u.d_child);
+            printk("......skipping %s\n", tmp->d_name.name);
         }
 
         i++;
@@ -1047,19 +1049,9 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
     // as copied from afs...
 
     struct inode *inode;
-    struct list_head *p;
-    struct dentry *tmp;
-
     _enter("dentry=%s", dentry->d_name.name);
-
     inode = dentry->d_inode;
     generic_fillattr(inode, stat);
-
-    list_for_each(p, &dentry->d_subdirs) {
-    	tmp = list_entry(p, struct dentry, d_u.d_child);
-    	// _debug("......child: %s", tmp->d_name.name);
-    }
-
     _leave(" = 0");
 
     return 0;

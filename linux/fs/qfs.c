@@ -90,7 +90,8 @@ struct qrpc_file_info {
 struct qrpc_inflight {
     uint32_t backing_fd;
     uint16_t len;
-    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t)];
+    uint64_t offset;
+    uint8_t data[QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint64_t)];
 } __attribute__((packed));
 
 LIST_HEAD(list);
@@ -133,25 +134,28 @@ static void qwrite(struct inode *inode, struct qrpc_frame *f, int num){
     struct qrpc_frame *frame;
     struct block_device *bdev;
     bdev = inode->i_sb->s_bdev;
-
+    _enter("frames=%i", num);
     for(i = 0; i < num; i++){
         frame = f + i;
 
-        if (i == 0){
+        if (i == 0 && num != 1){
+            _debug("copying in frame #%i", i);
             frame->cmd = QRPC_CMD_WRITE_START;
         } else {
+            _debug("copying in last frame #%i", i);
             frame->cmd = QRPC_CMD_WRITE_END;
         }
         f->ret = QRPC_RET_ERR;
+
+        //for debug purposes
+        struct qrpc_inflight framedata;
+        memcpy(&framedata, &frame->data, sizeof(framedata));
+        _debug("\tbacking_fd: %i", framedata.backing_fd);
+        _debug("\toffset: %i", framedata.offset);
+        _debug("\tlen: %i", framedata.len);
         qrpc_transfer(bdev, f + i, sizeof(struct qrpc_frame));
     }
 }
-
-//looking for an dentry, given a name and root inode...
-// static struct dentry* qlookup(struct superblock *sb, char *name, struct inode *dir) {
-    // struct dentry *root = sb->s_root;
-    // return root; // wtf?
-// }
 
 // SUPER OPERATIONS
 static inline struct qfs_inode* qnode_of_inode(struct inode* inode) {
@@ -671,9 +675,9 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
 
 static ssize_t qfs_file_write(struct file *file, const char __user *buf,
                               size_t count, loff_t *offset){
-	_enter("file: %s, user: %s, size: %d, offset: %d",
+	_enter("file: %s, buf: %s, size: %d, offset: %d",
          file->f_path.dentry->d_name.name,
-         buf, count, offset);
+         buf, count, *offset);
 
     //figure out how many frames I need
     struct qrpc_inflight framedata;
@@ -686,14 +690,15 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
 
     printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
-    printk("sizeof framedata: %i\n", sizeof(framedata.data));
-
+    printk("sizeof framedata: %i\t sizeof loff_t: %i\n", sizeof(framedata.data), sizeof(loff_t));
+    
     //figure out how many frames we need and alloc that much
     frame_count = (count/sizeof(framedata.data)) + 1;
     frame_list = kmalloc(sizeof(struct qrpc_frame)*frame_count, GFP_KERNEL);
 
     //split buf data into qrpc frames
     bytes_written = 0;
+    frames_written = 0;
     printk("number of frames needed: %i\n", frame_count);
 
     while(bytes_written < count) {
@@ -702,16 +707,15 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
         //copy in the fd
         framedata.backing_fd = file->private_data;
+        framedata.offset = *offset;
 
         if((count - bytes_written) > sizeof(framedata.data)){ // Not last frame
             //copy data into the framedata
-            _debug("writing %d bytes", sizeof(framedata.data));
             copy_from_user(&framedata.data, buf, sizeof(framedata.data));
             //copy in how much we wrote
             framedata.len = sizeof(framedata.data);
             //copy framedata into the qrpc frame
         } else {
-            _debug("writing %d bytes", (count - bytes_written));
             copy_from_user(&framedata.data, buf, (count - bytes_written));
             framedata.len = count - bytes_written;
         }
@@ -724,13 +728,16 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
 
     _debug("These should be equal, count:%i written:%i", frame_count, frames_written);
-    // qwrite(file->f_inode, frame_list, frames_written);
+    qwrite(file->f_dentry->d_inode, frame_list, frames_written);
     //kfree or else kernel panic
     kfree(frame_list);
+
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
+    file->f_pos = offset + bytes_written;
 	printk("QFS FILE WRITE\n");
-	return 0;
+    _leave("bytes_written: %i", bytes_written);
+	return bytes_written;
 }
 
 static int qfs_file_fsync(struct file *file, loff_t start, loff_t end, int datasync){

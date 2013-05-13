@@ -384,6 +384,57 @@ static int qfs_dir_release(struct inode *inode, struct file *file){
 	return 0;
 }
 
+static void qfs_build_inode(struct inode *dir,
+                            struct qrpc_file_info finfo,
+                            struct dentry *dentry,
+                            struct file *file) {
+  struct qstr qname;
+  struct inode *fde;
+  struct super_block *sb;
+
+  // create the qstr
+  qname.name = finfo.name;
+  qname.len = strlen(finfo.name);
+  qname.hash = full_name_hash(finfo.name, qname.len);
+
+  if(!dentry && file){
+    // Create the dentry
+    // _debug("creating dentry");
+    dentry = d_alloc(file->f_dentry, &qname);
+  }
+  sb = dentry->d_sb;
+
+  // Create the inode
+  // _debug("creating inode");
+  fde = qfs_make_inode(sb, DT_DIR | 0644); // The mode doesn't matter, we set it later.
+
+  // Assign operations
+  // _debug("assign ops");
+  switch(finfo.type) {
+  case DT_DIR:
+    fde->i_fop = &qfs_dir_operations;
+    inc_nlink(fde);
+    inc_nlink(dir);
+    break;
+  default:
+    fde->i_fop = &qfs_file_operations;
+  }
+  fde->i_op = &qfs_inode_operations;
+  fde->i_size = finfo.size;
+  fde->i_atime = (struct timespec) { .tv_sec = finfo.atime };
+  fde->i_mtime = (struct timespec) { .tv_sec = finfo.mtime };
+  fde->i_ctime = (struct timespec) { .tv_sec = finfo.ctime };
+
+  //assign mode
+  // _debug("assign mode");
+  fde->i_mode = finfo.mode;
+
+  // add it to the dcache (also attaches it to dentry)
+  d_add(dentry, fde);
+
+  // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+}
+
 static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 	// Returns next directory in a directory listing. function called by readdir() system call.
 
@@ -484,44 +535,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
         _debug("no inode, creating %s", finfo.name);
 
-        // create the qstr
-        qname.name = finfo.name;
-        qname.len = strlen(finfo.name);
-        qname.hash = full_name_hash(finfo.name, qname.len);
-
-        // Create the dentry
-        // _debug("creating dentry");
-        dentry = d_alloc(file->f_dentry, &qname);
-
-        // Create the inode
-        // _debug("creating inode");
-        fde = qfs_make_inode(sb, DT_DIR | 0644); // The mode doesn't matter, we set it later.
-
-        // Assign operations
-        // _debug("assign ops");
-        switch(finfo.type) {
-            case DT_DIR:
-                fde->i_fop = &qfs_dir_operations;
-                inc_nlink(fde);
-                inc_nlink(inode);
-                break;
-            default:
-                fde->i_fop = &qfs_file_operations;
-        }
-        fde->i_op = &qfs_inode_operations;
-        fde->i_size = finfo.size;
-        fde->i_atime = (struct timespec) { .tv_sec = finfo.atime };
-        fde->i_mtime = (struct timespec) { .tv_sec = finfo.mtime };
-        fde->i_ctime = (struct timespec) { .tv_sec = finfo.ctime };
-
-        //assign mode
-        // _debug("assign mode");
-        fde->i_mode = finfo.mode;
-
-        // add it to the dcache (also attaches it to dentry)
-        d_add(dentry, fde);
-
-        // printk("FINFO: name: %s \t ret: %i\n", finfo.name, frame.ret);
+        qfs_build_inode(inode, finfo, NULL, file);
         out:
         if (frame.ret == QRPC_RET_CONTINUE)
             qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
@@ -922,49 +936,10 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
       qtransfer(dir, QRPC_CMD_OPENDIR, &frame);
       memcpy(&finfo, &(frame.data), sizeof(struct qrpc_file_info));
 
-      //create a dentry?
-
-      // We should be maybe creating dentries and inodes on the fly here.
-      // At the very least, we need to create one for the one that is requested.
-      printk("finfo.name = %s, dentry.name = %s\n", finfo.name, dentry->d_name.name);
       if (strcmp(finfo.name, dentry->d_name.name) == 0) {
         _debug("found matching filename %s\n", finfo.name);
-        struct qstr qname;
-        struct inode *fde;
-        struct super_block *sb = dentry->d_sb;
-        // create the qstr
-        qname.name = finfo.name;
-        qname.len = strlen(finfo.name);
-        qname.hash = full_name_hash(finfo.name, qname.len);
 
-        // Create the inode
-        // _debug("creating inode");
-        fde = qfs_make_inode(sb, DT_DIR | 0644); // The mode doesn't matter, we set it later.
-        // Assign operations
-        // _debug("assign ops");
-        switch(finfo.type) {
-            case DT_DIR:
-                fde->i_fop = &qfs_dir_operations;
-                inc_nlink(fde);
-                inc_nlink(dir);
-                break;
-            default:
-                fde->i_fop = &qfs_file_operations;
-        }
-        fde->i_op = &qfs_inode_operations;
-        fde->i_size = finfo.size;
-        fde->i_atime = (struct timespec) { .tv_sec = finfo.atime };
-        fde->i_mtime = (struct timespec) { .tv_sec = finfo.mtime };
-        fde->i_ctime = (struct timespec) { .tv_sec = finfo.ctime };
-
-        //assign mode
-        // _debug("assign mode");
-        fde->i_mode = finfo.mode;
-
-        // add it to the dcache (also attaches it to dentry)
-        d_add(dentry, fde);
-
-
+        qfs_build_inode(dir, finfo, dentry, NULL);
         break;
       }
     } while(frame.ret == QRPC_RET_CONTINUE);

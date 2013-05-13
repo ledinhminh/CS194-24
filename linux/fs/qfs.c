@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/statfs.h>
+#include <linux/uaccess.h>
 
 // FIXME: These should really live in a header somewhere (note: I'm
 // extremely evil here, one of these parameters _doesn't_ match, but
@@ -572,31 +573,29 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
     size_t count;
     loff_t offset;
   } data;
-  int done = 0;
-  char __user * buf_ptr = buf;
+  char* mybuf[count];
+  char* buf_ptr = mybuf;
+  unsigned int total_read;
   data.fd = file->private_data;
   data.count = count;
   memcpy(&data.offset, offset, sizeof(loff_t));
   memcpy(frame.data, &data, sizeof(data));
   frame.cmd = QRPC_CMD_READ_FILE;
   qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-  while(!done) {
-    done = 1;
+  while(frame.ret == QRPC_RET_CONTINUE) {
     memcpy(buf_ptr, frame.data, 1024);
+    //memcpy(buf_ptr, frame.data, 1024);
     //printk("frame.data = %.1024s\n", frame.data);
     buf_ptr+=1024;
-    if(frame.ret == QRPC_RET_CONTINUE){
-      //printk("QRPC_RET_CONTINUE\n\n\n");
-      done = 0;
-      frame.cmd = QRPC_CMD_CONTINUE;
-      qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-    }
+    frame.cmd = QRPC_CMD_CONTINUE;
+    qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
   }
-  //printk("data = %.4096s\n", buf);
+  memcpy(&total_read, frame.data, sizeof(unsigned int));
+  printk("read %u bytes\n", total_read);
 	//reads count bytes from the given file at position offset into buf.
 	//file pointer is then updated
   _leave("");
-	return 0;
+	return total_read;
 }
 
 static ssize_t qfs_file_write(struct file *file, const char __user *buf,

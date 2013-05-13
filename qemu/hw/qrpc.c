@@ -354,6 +354,9 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
       } while(total_read < data.count && read == 1024);
       free(fp);
+      QRPCFrame frame;
+      memcpy(frame.data, &total_read, sizeof(unsigned int));
+      add_frame_to_buf(s, &frame);
       break;
     }
     default:

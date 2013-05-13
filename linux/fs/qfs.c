@@ -31,6 +31,8 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 #define QRPC_CMD_RENAME 20
 #define QRPC_CMD_UNLINK 25
 #define QRPC_CMD_RMDIR 23
+#define QRPC_CMD_WRITE_START 30
+#define QRPC_CMD_WRITE_END 31
 
 #define QRPC_CMD_OPEN_FILE 100
 #define QRPC_CMD_READ_FILE 101
@@ -660,7 +662,9 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
          buf, count, offset);
 
     //figure out how many frames I need
-    int frames = (count/1024) + 1;
+    struct qrpc_inflight *frames;
+    printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(struct qrpc_frame), sizeof(struct qrpc_inflight));
+    int frame_count = (count/sizeof(frames->data)) + 1;
 
     
 	//writes count bytes from buf into the given file at position offset.

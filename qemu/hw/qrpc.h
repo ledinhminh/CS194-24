@@ -15,6 +15,7 @@
 
 #define QRPC_CMD_OPEN_FILE 100
 #define QRPC_CMD_READ_FILE 101
+#define QRPC_CMD_RELEASE_FILE 102
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1

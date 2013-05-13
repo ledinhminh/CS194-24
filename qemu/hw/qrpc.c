@@ -128,7 +128,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 finfo.atime = st.st_atime;
                 finfo.mtime = st.st_mtime;
                 finfo.ctime = st.st_ctime;
-                
+
                 fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
                 // fprintf(stderr, "name: %s\n", finfo.name);
                 memcpy(&(s->frame.data), &finfo, sizeof(struct qrpc_file_info));
@@ -348,6 +348,19 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       memcpy(frame.data, &total_read, sizeof(unsigned int));
       add_frame_to_buf(s, &frame);
       break;
+    }
+    case QRPC_CMD_RELEASE_FILE:
+    {
+      int fd;
+      QRPCFrame frame;
+      FILE* fp;
+
+      memcpy(&fd, s->frame.data, sizeof(int));
+      fp = fdopen(fd, "r");
+      fprintf(stderr, "Closing fd %d\n", fd);
+      frame.ret = fclose(fp);
+      //free(fp); // fclose frees fp
+      add_frame_to_buf(s, &frame);
     }
     default:
         // Silently drop all unknown commands

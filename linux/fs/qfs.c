@@ -34,6 +34,7 @@ extern void qrpc_transfer(struct block_device *bdev, void *data, int count);
 
 #define QRPC_CMD_OPEN_FILE 100
 #define QRPC_CMD_READ_FILE 101
+#define QRPC_CMD_RELEASE_FILE 102
 
 #define QRPC_RET_OK  0
 #define QRPC_RET_ERR 1
@@ -567,9 +568,12 @@ static int qfs_file_open(struct inode *inode, struct file *file) {
 
 static int qfs_file_release(struct inode *inode, struct file *file){
 	_enter("file: %s", file->f_path.dentry->d_name.name);
-	//called when last remaining reference to file is destroyed
-  _leave(" = %d", 0);
-	return 0;
+  struct qrpc_frame frame;
+  int fd = file->private_data;
+  memcpy(frame.data, &fd, sizeof(int));
+  qtransfer(inode, QRPC_CMD_RELEASE_FILE, &frame);
+  _leave(" = %d", frame.ret);
+	return frame.ret;
 }
 
 static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){

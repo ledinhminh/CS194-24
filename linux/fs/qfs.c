@@ -573,8 +573,7 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
     size_t count;
     loff_t offset;
   } data;
-  char* mybuf[count];
-  char* buf_ptr = mybuf;
+  char* buf_ptr = buf;
   unsigned int total_read;
   data.fd = file->private_data;
   data.count = count;
@@ -583,7 +582,7 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
   frame.cmd = QRPC_CMD_READ_FILE;
   qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
   while(frame.ret == QRPC_RET_CONTINUE) {
-    memcpy(buf_ptr, frame.data, 1024);
+    copy_to_user(buf_ptr, frame.data, 1024);
     //memcpy(buf_ptr, frame.data, 1024);
     //printk("frame.data = %.1024s\n", frame.data);
     buf_ptr+=1024;

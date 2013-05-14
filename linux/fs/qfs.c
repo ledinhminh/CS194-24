@@ -12,7 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/statfs.h>
 #include <linux/uaccess.h>
-
+#include <linux/spinlock.h>
 // FIXME: These should really live in a header somewhere (note: I'm
 // extremely evil here, one of these parameters _doesn't_ match, but
 // that's done purposefully)
@@ -104,15 +104,16 @@ struct qfs_inode head;
 #define kleave(FMT,...) printk("<== %s()"FMT"\n",__func__ ,##__VA_ARGS__)
 #define kdebug(FMT,...) printk("    "FMT"\n" ,##__VA_ARGS__)
 
-#define _enter(FMT,...) kenter(FMT,##__VA_ARGS__)
-#define _leave(FMT,...) kleave(FMT,##__VA_ARGS__)
-#define _debug(FMT,...) kdebug(FMT,##__VA_ARGS__)
+#define _enter(FMT,...) //kenter(FMT,##__VA_ARGS__)
+#define _leave(FMT,...) //kleave(FMT,##__VA_ARGS__)
+#define _debug(FMT,...) //kdebug(FMT,##__VA_ARGS__)
 
 
 static struct inode *qfs_make_inode(struct super_block *sb, int mode);
 static char* get_entire_path(struct dentry *dentry);
 
 //because getting the block device SUCKS~!!!
+//should be called with spinlock held
 static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 
     struct block_device *bdev;
@@ -129,6 +130,7 @@ static void qtransfer(struct inode *inode, uint8_t cmd, struct qrpc_frame *f) {
 }
 
 // f IS AN _ARRAY_ OF QRPC FRAMES OF LENGTH num
+// shoud be called with spinlock held
 static void qwrite(struct inode *inode, struct qrpc_frame *f, int num){
     int i;
     struct qrpc_frame *frame;
@@ -294,12 +296,13 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
     strcpy(frame.data, full_path);
 
     // Go to the host every single time.
+    spin_lock(&device_lock);
     qrpc_transfer(dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
-
+    spin_unlock(&device_lock);
     //i would like to think that if revalidate returns 0, we delete such inode
     if(frame.data[0] == 0) {
         //delete the inode from our list
-        printk("...revalidate must delete inode from list\n");
+        // printk("...revalidate must delete inode from list\n");
         list_for_each_entry_safe(qfs_inode, qfs_inode_safe, &list, list){
             inode = &qfs_inode->inode;
 
@@ -307,9 +310,9 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
             struct dentry* loop_dentry;
 
             hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
-                printk("...revalidate loop_dentry: %s\n", loop_dentry->d_name.name);
+                // printk("...revalidate loop_dentry: %s\n", loop_dentry->d_name.name);
                 if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
-                    printk("...revalidate deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
+                    // printk("...revalidate deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
                     list_del(&qfs_inode->list);
                     shrink_dcache_parent(loop_dentry);
                     d_drop(loop_dentry);
@@ -317,7 +320,7 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
                 }
             }
         }
-        printk("...revlaidate deletion has happened\n");
+        // printk("...revlaidate deletion has happened\n");
     }
 
     // _debug("exists: %u", frame.data[0]);
@@ -328,14 +331,14 @@ static int qfs_revalidate(struct dentry *dentry, unsigned int flags) {
 
 static int qfs_delete(const struct dentry *dentry) {
     _enter("%s", dentry->d_name.name);
-    printk("....DELETE %s d_count: %i\n", dentry->d_name.name, dentry->d_count);
+    // printk("....DELETE %s d_count: %i\n", dentry->d_name.name, dentry->d_count);
     _leave("");
     return 0;
 }
 
 static void qfs_release(struct dentry *dentry) {
     _enter("%s", dentry->d_name.name);
-    printk("...dentry: %s, dcount: %i\n", dentry->d_name.name, dentry->d_count);
+    // printk("...dentry: %s, dcount: %i\n", dentry->d_name.name, dentry->d_count);
     _leave("");
     return;
 }
@@ -351,24 +354,13 @@ static void qfs_destroy_inode(struct inode *inode) {
 	return;
 }
 
-// static void qfs_evict_inode(struct inode *inode) {
-//     // Please help us, afs_evict_inode
-
-//     // _enter("i_ino=%d", inode->i_ino);
-
-//     // Do stuff
-
-//     // _leave("");
-// 	return;
-// }
-
 static int qfs_show_options(struct seq_file *file, struct dentry *dentry){
-	printk("QFS SUPER SHOW OPTIONS\n");
+	// printk("QFS SUPER SHOW OPTIONS\n");
 	return 0;
 }
 
 static struct vfsmount* qfs_automount(struct path *path){
-	printk("QFS DENTRY AUTOMOUNT\n");
+	// printk("QFS DENTRY AUTOMOUNT\n");
 	return NULL;
 }
 
@@ -376,7 +368,7 @@ static struct vfsmount* qfs_automount(struct path *path){
 static int qfs_dir_open(struct inode *inode, struct file *file){
 	//creates a new file object and links it to the corresponding inode object.
 	//reference counting? (increment)
-	printk("QFS DIR OPEN\n");
+	// printk("QFS DIR OPEN\n");
 	return 0;
 }
 
@@ -464,10 +456,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 				ret_num++;
 		}
 
-		struct super_block *sb = file->f_dentry->d_sb;
 		struct dentry *dentry = file->f_dentry;
-		struct qstr qname;
-		struct inode *fde;
 		struct qrpc_frame frame;
 		struct qrpc_file_info finfo;
 		int done;
@@ -495,6 +484,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     }
     }
 
+
+    spin_lock(&device_lock);
     // fetch stuff from device
     qtransfer(dentry->d_inode, QRPC_CMD_OPENDIR, &frame);
     done = 0;
@@ -544,7 +535,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         if (frame.ret == QRPC_RET_CONTINUE)
             qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
     }
-
+    spin_unlock(&device_lock);
     // _debug("done transferring, thanks");
 
     //we can check f_pos to see where we left off
@@ -583,13 +574,13 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
 static int qfs_dir_lock(struct file *file, int cmd, struct file_lock *lock){
 	//manipulate a file lock on the given file
-	printk("QFS DIR LOCK\n");
+	// printk("QFS DIR LOCK\n");
 	return 0;
 }
 
 static loff_t qfs_dir_llseek(struct file *file, loff_t offset, int origin){
 	//updates file pointer to the given offset. called via llseek() system call.
-	printk("QFS DIR LLSEEK\n");
+	// printk("QFS DIR LLSEEK\n");
 	return 0;
 }
 
@@ -602,12 +593,15 @@ static int qfs_file_open(struct inode *inode, struct file *file) {
 
   full_path = get_entire_path(file->f_path.dentry);
   strcpy(frame.data, full_path);
+
+  spin_lock(&device_lock);
   qtransfer(inode, QRPC_CMD_OPEN_FILE, &frame);
+  spin_unlock(&device_lock);
   if(frame.ret == QRPC_RET_OK){
     memcpy(&fd, frame.data, sizeof(int));
     qnode_of_inode(inode)->backing_fd = fd; // XXX: Not used
     file->private_data = fd;
-    printk("Opended fd %lu\n", fd);
+    // printk("Opended fd %lu\n", fd);
   }
   _leave(" = %d", frame.ret);
 	return frame.ret;
@@ -629,12 +623,11 @@ static loff_t qfs_file_llseek(struct file *file, loff_t offset, int origin){
          offset, origin);
 	//updates file pointer to the given offset. called via llseek() system call.
 
-	printk("QFS FILE LLSEEK\n");
+	// printk("QFS FILE LLSEEK\n");
 	return 0;
 }
 
-static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
-                             loff_t *offset) {
+static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count, loff_t *offset) {
 
     struct qrpc_frame frame;
     struct qrpc_inflight inflight;
@@ -654,6 +647,8 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
     memcpy(&data.offset, &offset, sizeof(loff_t));
     memcpy(&frame.data, &data, sizeof(data));
     frame.cmd = QRPC_CMD_READ_FILE;
+
+    spin_lock(&device_lock);
     qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
   
     do {
@@ -668,13 +663,13 @@ static ssize_t qfs_file_read(struct file *file, char __user *buf, size_t count,
         frame.cmd = QRPC_CMD_CONTINUE;
         qrpc_transfer(file->f_dentry->d_sb->s_bdev, &frame, sizeof(struct qrpc_frame));
     } while(frame.ret == QRPC_RET_CONTINUE);
-    
+   
+   spin_unlock(&device_lock); 
     _leave(" = %d", total_read);
     return total_read;
 }
 
-static ssize_t qfs_file_write(struct file *file, const char __user *buf,
-                              size_t count, loff_t *offset){
+static ssize_t qfs_file_write(struct file *file, const char __user *buf, size_t count, loff_t *offset){
 	_enter("file: %s, buf: %s, size: %d, offset: %d",
          file->f_path.dentry->d_name.name,
          buf, count, *offset);
@@ -689,10 +684,10 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
     char *kbuf;
 
 
-    printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
-    printk("sizeof framedata: %i\t sizeof loff_t: %i\n", sizeof(framedata.data), sizeof(loff_t));
-    printk("inode size: %i\t bytes: %i\n", file->f_dentry->d_inode->i_size, file->f_dentry->d_inode->i_size);
-    printk("file mode: 0x%x\n", file->f_mode);
+    // printk("sizeof frame: %i\t sizeof inflight: %i\n", sizeof(frame_list->data), sizeof(struct qrpc_inflight));
+    // printk("sizeof framedata: %i\t sizeof loff_t: %i\n", sizeof(framedata.data), sizeof(loff_t));
+    // printk("inode size: %i\t bytes: %i\n", file->f_dentry->d_inode->i_size, file->f_dentry->d_inode->i_size);
+    // printk("file mode: 0x%x\n", file->f_mode);
     
     //figure out how many frames we need and alloc that much
     frame_count = (count/sizeof(framedata.data)) + 1;
@@ -701,7 +696,7 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
     //split buf data into qrpc frames
     bytes_written = 0;
     frames_written = 0;
-    printk("number of frames needed: %i\n", frame_count);
+    // printk("number of frames needed: %i\n", frame_count);
 
     while(bytes_written < count) {
         cur_frame = frame_list + frames_written;
@@ -730,7 +725,9 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
 
     _debug("These should be equal, count:%i written:%i", frame_count, frames_written);
+    spin_lock(&device_lock);
     qwrite(file->f_dentry->d_inode, frame_list, frames_written);
+    spin_unlock(&device_lock);
     //kfree or else kernel panic
     kfree(frame_list);
 
@@ -744,7 +741,7 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 	//writes count bytes from buf into the given file at position offset.
 	//file pointer is then updated
     file->f_pos = *offset + bytes_written;
-	printk("QFS FILE WRITE\n");
+	// printk("QFS FILE WRITE\n");
     _debug("f_pos %i", file->f_pos);
     _debug("f_size %i", file->f_dentry->d_inode->i_size);
     _debug("f_bytes %i", file->f_dentry->d_inode->i_bytes);
@@ -754,19 +751,19 @@ static ssize_t qfs_file_write(struct file *file, const char __user *buf,
 
 static int qfs_file_fsync(struct file *file, loff_t start, loff_t end, int datasync){
 	//write all cached data for file to disk
-	printk("QFS FILE FSYNC\n");
+	// printk("QFS FILE FSYNC\n");
 	return 0;
 }
 
 static int qfs_file_lock(struct file *file, int cmd, struct file_lock *lock){
 	//manipulates a file lock on the given file
-	printk("QFS FILE LOCK\n");
+	// printk("QFS FILE LOCK\n");
 	return 0;
 }
 
 static int qfs_file_flock(struct file *file, int cmd, struct file_lock *lock){
 	//advisory locking
-	printk("QFS FILE FLOCK\n");
+	// printk("QFS FILE FLOCK\n");
 	return 0;
 }
 
@@ -817,8 +814,9 @@ static int qfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode) {
     strcpy(frame.data + sizeof(unsigned short), get_entire_path(dentry));
 
     // Here we go.
+    spin_lock(&device_lock);
     qtransfer(dir, QRPC_CMD_CREATE, &frame);
-
+    spin_unlock(&device_lock);
     memcpy(&backing_fd, frame.data, sizeof(int));
     // TODO: Do some error checking here
 
@@ -950,6 +948,7 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
     // sprintf(frame.data, "%s", path);
     strcpy(frame.data, path);
 
+    spin_lock(&device_lock);
     _debug("time to read");
     do {
       qtransfer(dir, QRPC_CMD_OPENDIR, &frame);
@@ -962,13 +961,13 @@ static struct dentry* qfs_lookup(struct inode *dir, struct dentry *dentry, unsig
         break;
       }
     } while(frame.ret == QRPC_RET_CONTINUE);
-
+    spin_unlock(&device_lock);
     _leave(" = NULL");
     return NULL;
 }
 
 static int qfs_link(struct dentry *old_dentry, struct inode *indoe, struct dentry *dentry){
-	printk("QFS INODE LINK\n");
+	// printk("QFS INODE LINK\n");
 	return 0;
 }
 
@@ -987,7 +986,9 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
     _debug("sending to host");
     full_path = get_entire_path(dentry);
     strcpy(frame.data, full_path);
+    spin_lock(&device_lock);
     qtransfer(dir, QRPC_CMD_UNLINK, &frame);
+    spin_unlock(&device_lock);
     memcpy(&remote_ret, frame.data, sizeof(int));
 
     // Take out of list
@@ -1001,14 +1002,14 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
 
         hlist_for_each_entry(loop_dentry, node, &(inode->i_dentry), d_alias) {
             if (strcmp(dentry->d_name.name, loop_dentry->d_name.name) == 0) {
-                printk("...unlink deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
+                // printk("...unlink deleted an inode from some dentry named %s\n", loop_dentry->d_name.name);
                 list_del(&entry->list);
                 d_drop(loop_dentry);
             }
         }
     }
 
-    printk("...unlink deletion has happened\n");
+    // printk("...unlink deletion has happened\n");
 
     _debug("simple unlink");
     d_invalidate(dentry);
@@ -1022,12 +1023,12 @@ static int qfs_unlink(struct inode *dir, struct dentry *dentry) {
 }
 
 static int qfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname){
-	printk("QFS INODE SYMLINK\n");
+	// printk("QFS INODE SYMLINK\n");
 	return 0;
 }
 
 static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
-	printk("QFS INODE RMDIR\n");
+	// printk("QFS INODE RMDIR\n");
 
     struct qrpc_frame frame;
     char *path;
@@ -1038,10 +1039,12 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
     path = get_entire_path(dentry);
     // memcpy(&frame.data, path, sizeof(char)*strlen(path));
     strcpy(frame.data, path);
+    spin_lock(&device_lock);
     qtransfer(dir, QRPC_CMD_RMDIR, &frame);
+    spin_unlock(&device_lock);
     memcpy(&ret, &frame.data, sizeof(int));
 
-    printk("...rmdir return with %i\n", ret);
+    // printk("...rmdir return with %i\n", ret);
 
 
     if(ret == 0){
@@ -1052,13 +1055,13 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
         simple_rmdir(dir, dentry);
 
         ret = d_invalidate(dentry);
-        printk("...rmdir invalidate return %i\n", ret);
+        // printk("...rmdir invalidate return %i\n", ret);
 
         d_delete(dentry);
 
         // dput(dentry);
 
-        printk("...rmdir nlink of parent %i\n", dir->i_nlink);
+        // printk("...rmdir nlink of parent %i\n", dir->i_nlink);
 
 
         struct hlist_node* node; /* Miscellaneous crap needed for hlists. */
@@ -1067,14 +1070,14 @@ static int qfs_rmdir(struct inode *dir, struct dentry *dentry){
 
         hlist_for_each_entry(loop_dentry, node, &(dir->i_dentry), d_alias) {
             list_for_each_entry(subdir, &loop_dentry->d_subdirs, d_u.d_child) {
-                printk("...rmdir dir child: %s\n", subdir->d_name.name);
+                // printk("...rmdir dir child: %s\n", subdir->d_name.name);
             }
         }
 
-        printk("...deleted dentry dcount: %i\n", dentry->d_count);
+        // printk("...deleted dentry dcount: %i\n", dentry->d_count);
 
     } else {
-        printk("...didn't delete dentry\n");
+        // printk("...didn't delete dentry\n");
     }
 
    	return 0;
@@ -1103,7 +1106,9 @@ static int qfs_rename(struct inode *old_dir, struct dentry *old_dentry, struct i
     strcpy(frame.data, old_path);
     strcpy(frame.data + strlen(old_path) + 1, new_path);
 
+    spin_lock(&device_lock);
     qtransfer(old_dir, QRPC_CMD_RENAME, &frame);
+    spin_unlock(&device_lock);
 
     memcpy(&remote_ret, frame.data, sizeof(int));
 
@@ -1132,7 +1137,7 @@ static int qfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat
 
 static int qfs_setattr(struct dentry *dentry, struct iattr *attr){
 	//caled from notify_change() to notify a 'change event' after an inode has been modified
-	printk("QFS INODE SETATTR\n");
+	// printk("QFS INODE SETATTR\n");
     simple_setattr(dentry, attr);
 	return 0;
 }
@@ -1300,6 +1305,8 @@ struct dentry *qfs_mount(struct file_system_type *fs_type,
 	qrpc_transfer(bdev, &f, sizeof(f));
 	if (f.ret != QRPC_RET_OK)
 		panic("QRPC mount failed!");
+
+    spin_lock_init(&device_lock);
 
 	return dget(sb->s_root);
 }

@@ -21,8 +21,8 @@ static uint64_t qrpc_read(void *v, hwaddr a, unsigned w)
 
     // This might be useful for debugging... :)
 #if DEBUG_PORTS
-    fprintf(stderr, "qrpc_read(%p, %lX, %u) => %d\n", v, a, w,
-            ((uint8_t *)(&s->frame))[a]);
+    // fprintf(stderr, "qrpc_read(%p, %lX, %u) => %d\n", v, a, w,
+            // ((uint8_t *)(&s->frame))[a]);
 #endif
 
     // Silently drop everything that's not a inb
@@ -70,7 +70,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     if (d != QRPC_CMD_CONTINUE){
         //initialize the list
         //there shouldn't be any frames that haven't been read out anyway
-        fprintf(stderr, "clearing out buffer...\n");
+        // fprintf(stderr, "clearing out buffer...\n");
         s->buf_size = 0;
         s->buf_read = 0;
         memset(s->buffer, 0, sizeof(QRPCFrame) * QRPC_BUFFER_LEN);
@@ -97,7 +97,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         int path_size = strlen(s->path) + strlen(s->frame.data) + 1;
         char *path[MAX_PATH_LEN];
         sprintf(path, "%s/%s", s->path, s->frame.data);
-        fprintf(stderr, "openddir path: %s\n", path);
+        // fprintf(stderr, "openddir path: %s\n", path);
         if ((dir = opendir(path)) != NULL){
             while ((ent = readdir(dir)) != NULL){
 
@@ -113,7 +113,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 struct qrpc_file_info finfo;
 
                 sprintf(full_path, "%s/%s", path, ent->d_name);
-                fprintf(stderr, "...stat path: %s\n", full_path);
+                // fprintf(stderr, "...stat path: %s\n", full_path);
                 ret = stat(full_path, &st);
 
                 //if we can't stat the file, we probably shouldn't keep going
@@ -129,7 +129,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 finfo.mtime = st.st_mtime;
                 finfo.ctime = st.st_ctime;
 
-                fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
+                // fprintf(stderr, "sizeof finfo: %i\n", sizeof(struct qrpc_file_info));
                 // fprintf(stderr, "name: %s\n", finfo.name);
                 memcpy(&(s->frame.data), &finfo, sizeof(struct qrpc_file_info));
 
@@ -139,7 +139,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
                 frame.ret = QRPC_RET_CONTINUE;
 
                 add_frame_to_buf(s, &frame);
-                fprintf(stderr, "..Added %s to buffer\n", finfo.name);
+                // fprintf(stderr, "..Added %s to buffer\n", finfo.name);
             }
             closedir(dir);
         }else {
@@ -173,7 +173,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         else
             printf("mknod: invalid mode bits\n");
 
-        printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
+        // printf("path? mode=%u, %s, fd = %d\n", mode, path, fd);
 
         if (fd == -1) {
             printf("errno=%u (%s)\n", errno, strerror(errno));
@@ -196,7 +196,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
 
         ret = access(path, F_OK) != -1 ? 1 : 0;
 
-        printf("revalidate: %s is %d (0 = bad, 1 = ok)\n", path, ret);
+        // printf("revalidate: %s is %d (0 = bad, 1 = ok)\n", path, ret);
 
         // free(path);
 
@@ -225,7 +225,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         ret = rename(old_path_abs, new_path_abs);
         memcpy(frame.data, &ret, sizeof(int));
 
-        printf("old path=%s, new path=%s, ret=%u\n", old_path_abs, new_path_abs, ret);
+        // printf("old path=%s, new path=%s, ret=%u\n", old_path_abs, new_path_abs, ret);
 
         // We should probably do some error checking.
         if (ret == -1) {
@@ -250,7 +250,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         path = malloc(strlen(s->path) + strlen(s->frame.data) + 1 * sizeof(char));
         sprintf(path, "%s/%s", s->path, s->frame.data);
 
-        printf("unlink: %s\n", path);
+        // printf("unlink: %s\n", path);
         ret = unlink(path);
 
         if (ret == -1) {
@@ -265,14 +265,14 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     case QRPC_CMD_RMDIR:
     {
         //delete a directory
-        printf("Time to unlink");
+        // printf("Time to unlink");
         QRPCFrame frame;
         char path[MAX_PATH_LEN];
         int ret;
 
         memset(path, 0, sizeof(char)*MAX_PATH_LEN);
         sprintf(path, "%s/%s", s->path, s->frame.data);
-        printf("...unlinke path %s\n", path);
+        // printf("...unlinke path %s\n", path);
         ret = rmdir(path);
 
         if (ret < 0){
@@ -282,7 +282,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
 
         memcpy(frame.data, &ret, sizeof(int));
         add_frame_to_buf(s, &frame);
-        printf("deleted %s with return %i\n", path, ret);
+        // printf("deleted %s with return %i\n", path, ret);
         break;
 
     }
@@ -296,7 +296,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
       sprintf(path_abs, "%s/%s", s->path, path);
       fd = open(path_abs, O_RDWR);
 
-      fprintf(stderr, "Opening file %s: fd = %ld\n", path_abs, fd);
+      //fprintf(stderr, "Opening file %s: fd = %ld\n", path_abs, fd);
       memcpy(frame.data, &fd, sizeof(int));
 
       free(path);
@@ -316,7 +316,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
     FILE *fp;
     
     memcpy(&data, s->frame.data, sizeof(data));
-    fprintf(stderr, "Reading from fd: %d, %d bytes\n", data.fd, data.count);
+    //fprintf(stderr, "Reading from fd: %d, %d bytes\n", data.fd, data.count);
     fp = fdopen(data.fd, "r");
     do {
         QRPCFrame frame;
@@ -334,7 +334,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         frame.ret = QRPC_RET_CONTINUE;
 
         add_frame_to_buf(s, &frame);
-        fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
+        //fprintf(stderr, "Read %d bytes from fd %d\n", read, data.fd);
     } while(total_read < data.count && read == QRPC_DATA_SIZE - sizeof(uint32_t) - sizeof(uint16_t) - sizeof(uint64_t));
     
     free(fp);
@@ -352,7 +352,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
 
       memcpy(&fd, s->frame.data, sizeof(int));
       fp = fdopen(fd, "r");
-      fprintf(stderr, "Closing fd %d\n", fd);
+      //fprintf(stderr, "Closing fd %d\n", fd);
       frame.ret = fclose(fp);
       //free(fp); // fclose frees fp
       add_frame_to_buf(s, &frame);
@@ -375,26 +375,26 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         for (i = 0; i < s->buf_size; i++) {
             frame = s->buffer[i];
             memcpy(&inflight, &frame.data, sizeof(struct qrpc_inflight));
-            printf("write: this frame: backing_fd=%d, len=%d, offset=%lu\n", inflight.backing_fd, inflight.len, inflight.offset);
+            //printf("write: this frame: backing_fd=%d, len=%d, offset=%lu\n", inflight.backing_fd, inflight.len, inflight.offset);
             
-            printf("%s\n", inflight.data); 
+            //printf("%s\n", inflight.data); 
             // We don't know the fd until now.
             if (fp == NULL) {
-                fprintf(stderr, "fp is null, creating one\n");
+                // fprintf(stderr, "fp is null, creating one\n");
                 fp = fdopen(inflight.backing_fd, "w");
-                fprintf(stderr, "fp has been created\n");
+                // fprintf(stderr, "fp has been created\n");
                 if (fseek(fp, inflight.offset, SEEK_SET) != 0) { // fseek failed
                     written = -errno;
-                    fprintf(stderr, "fseek failed %s\n", strerror(errno));
+                    // fprintf(stderr, "fseek failed %s\n", strerror(errno));
                     goto done;
                 }
             }
             
-            fprintf(stderr, "fp is not null, we do fwrite\n");
+            // fprintf(stderr, "fp is not null, we do fwrite\n");
             written += fwrite(inflight.data, 1, inflight.len, fp);
-            fprintf(stderr, "loop  written %i\n", written);
+            // fprintf(stderr, "loop  written %i\n", written);
             if (written != inflight.len){
-                fprintf(stderr, "error: %s\n", strerror(errno));
+                // fprintf(stderr, "error: %s\n", strerror(errno));
             }
         }
         
@@ -403,7 +403,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         fflush(fp);
         i = ftruncate(inflight.backing_fd, written);
         if (i != 0){
-            fprintf(stderr, "truncate error: %s\n", strerror(errno));
+            // fprintf(stderr, "truncate error: %s\n", strerror(errno));
         }
         s->buf_size = 0;
         s->buf_read = 0;
@@ -415,7 +415,7 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         finfo.size = st.st_size;
         finfo.name_len = written;
 
-        printf("write: new size is %d\n", st.st_size);
+        // printf("write: new size is %d\n", st.st_size);
         memcpy(frame.data, &finfo, sizeof(struct qrpc_file_info));
 
         add_frame_to_buf(s, &frame);
@@ -468,7 +468,7 @@ static int qrpc_init(PCIDevice *pci_dev)
     while (size < sizeof(QRPCFrame))
         size *= 2;
 
-    fprintf(stderr, "qrpc_init()\n");
+    // fprintf(stderr, "qrpc_init()\n");
     memory_region_init_io(&d->io, &qrpc_ops, d, "qrpc", size);
     pci_register_bar(pci_dev, 0, PCI_BASE_ADDRESS_SPACE_IO, &d->io);
 

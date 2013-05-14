@@ -450,15 +450,15 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
 		_enter("");
 
-		_debug("f_pos=%d", f_pos);
+		// _debug("f_pos=%d", f_pos);
 		if (f_pos == 0){
-				printk("...creating the (dot) directory\n");
+				// printk("...creating the (dot) directory\n");
 				filldir(dirent, ".", 1, f_pos, inode->i_ino, S_IFDIR);
 				file->f_pos = f_pos = 1;
 				ret_num++;
 		}
 		if (f_pos == 1) {
-				printk("...creating the (dot dot) directory\n");
+				// printk("...creating the (dot dot) directory\n");
 				filldir(dirent, "..", 2, f_pos, file->f_dentry->d_parent->d_inode->i_ino, S_IFDIR);
 				file->f_pos = f_pos = 2;
 				ret_num++;
@@ -481,7 +481,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     path = dentry_path_raw(file->f_dentry, path_buf, 256);
 
 
-    _debug("path=%s", path);
+    // _debug("path=%s", path);
     // sprintf(frame.data, "%s", path);
     strcpy(frame.data, path);
 
@@ -512,7 +512,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
         //we don't want blank names...
         if (strcmp(finfo.name, "") == 0) {
-            printk("...found a blank name\n");
+            // printk("...found a blank name\n");
             continue;
         }
 
@@ -520,14 +520,14 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
         char* full_path;
         full_path = kmalloc(sizeof(char)*(strlen(path) + strlen(finfo.name)), GFP_KERNEL);
         sprintf(full_path, "%s/%s", path, finfo.name);
-        printk("......entire path is %s\n", full_path);
+        // printk("......entire path is %s\n", full_path);
 
         if (NULL != (maybe_inode = find_in_list(full_path))) {
             struct dentry *loop_dentry;
             struct hlist_node *node;
 
             hlist_for_each_entry(loop_dentry, node, &maybe_inode->inode.i_dentry, d_alias) {
-                _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
+                // _debug("repopulating existing dentry: d_name=%s", loop_dentry->d_name.name);
                 list_add_tail(&loop_dentry->d_u.d_child, &dentry->d_subdirs);
             }
 
@@ -537,7 +537,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
 
         kfree(full_path);
 
-        _debug("no inode, creating %s", finfo.name);
+        // _debug("no inode, creating %s", finfo.name);
 
         qfs_build_inode(inode, finfo, NULL, file);
         out:
@@ -545,7 +545,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
             qtransfer(dentry->d_inode, QRPC_CMD_CONTINUE, &frame);
     }
 
-    _debug("done transferring, thanks");
+    // _debug("done transferring, thanks");
 
     //we can check f_pos to see where we left off
     unsigned ino;
@@ -554,8 +554,8 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
     list_for_each(p, &file->f_dentry->d_subdirs) {
         if ((i+3) > f_pos){ // What's 3?
             tmp = list_entry(p, struct dentry, d_u.d_child);
-            _debug("tmp: %p %i", tmp, tmp->d_inode->i_ino);
-            printk("......filldir: %s %i\n", tmp->d_name.name, tmp->d_inode->i_ino);
+            // _debug("tmp: %p %i", tmp, tmp->d_inode->i_ino);
+            // printk("......filldir: %s %i\n", tmp->d_name.name, tmp->d_inode->i_ino);
             ino = tmp->d_inode->i_ino;
             filldir(dirent, tmp->d_name.name, strlen(tmp->d_name.name), file->f_pos, ino, tmp->d_inode->i_mode);
             file->f_pos++;
@@ -563,7 +563,7 @@ static int qfs_dir_readdir(struct file *file, void *dirent, filldir_t filldir) {
             ret_num++;
         } else {
             tmp = list_entry(p, struct dentry, d_u.d_child);
-            printk("......skipping %s\n", tmp->d_name.name);
+            // printk("......skipping %s\n", tmp->d_name.name);
         }
 
         i++;

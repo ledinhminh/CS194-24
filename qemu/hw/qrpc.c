@@ -401,6 +401,10 @@ static void qrpc_write(void *v, hwaddr a, uint64_t d, unsigned w)
         done:
         // Clear the buffers
         fflush(fp);
+        i = ftruncate(inflight.backing_fd, written);
+        if (i != 0){
+            fprintf(stderr, "truncate error: %s\n", strerror(errno));
+        }
         s->buf_size = 0;
         s->buf_read = 0;
         memset(s->buffer, 0, sizeof(QRPCFrame) * QRPC_BUFFER_LEN);
